@@ -335,10 +335,10 @@ function montarBanco(){
   var tabs = document.querySelector(".sidebar nav.tabs"), rs = document.getElementById("rsTab"), ref = document.getElementById("panel-ajuda");
   if (!tabs || !rs || !ref || rs.style.display === "none") return;
   var tab = document.createElement("div"); tab.className = "tab tab-sub"; tab.id = "rtTab"; tab.setAttribute("data-tab","rt");
-  tab.innerHTML = '<span class="tab-icon">&#128269;</span>Banco de Talentos (piloto)';
+  tab.innerHTML = '<span class="tab-icon">&#128269;</span>Talentos R&S (piloto)';
   tabs.insertBefore(tab, rs.nextSibling);
   var painel = document.createElement("div"); painel.className = "panel"; painel.id = "panel-rt";
-  painel.innerHTML = '<div class="kanban-header"><h2>Banco de Talentos (piloto)</h2></div><div style="padding:0 4px 10px;font-size:13px;color:#555">Candidatos da página pública que autorizaram o banco de talentos e candidatos do RecrutaHub atual.</div>' +
+  painel.innerHTML = '<div class="kanban-header"><h2>Talentos R&S (piloto)</h2></div><div style="padding:0 4px 10px;font-size:13px;color:#555">Candidatos da página pública que autorizaram o banco de talentos e candidatos do RecrutaHub atual.</div>' +
     '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px"><input id="rtQ" placeholder="Busca livre (nome, e-mail, palavra-chave)" style="flex:2;min-width:220px"><input id="rtCargo" placeholder="Cargo / área" style="flex:1;min-width:140px"><input id="rtCidade" placeholder="Cidade" style="flex:1;min-width:120px"><select id="rtFonte"><option value="">Todas as origens</option><option value="publico">Página pública</option><option value="recrutahub">RecrutaHub atual</option></select><button class="rs-btn rs-primary" id="rtBuscar">Buscar</button></div><div id="rtLista"></div>';
   ref.parentNode.insertBefore(painel, ref);
   tab.addEventListener("click", function(){ document.querySelectorAll(".tab").forEach(function(x){ x.classList.remove("active"); }); document.querySelectorAll(".panel").forEach(function(x){ x.classList.remove("active"); }); tab.classList.add("active"); painel.classList.add("active"); var cb = document.getElementById("clientbarWrap"); if (cb) cb.style.display = "none"; buscarBanco(); });
