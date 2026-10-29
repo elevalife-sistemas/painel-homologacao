@@ -52,10 +52,7 @@ function montar(){
   ref.parentNode.insertBefore(painel, ref);
   tab.addEventListener("click", function(){ var cb = document.getElementById("clientbarWrap"); if (cb) cb.style.display = "none"; carregar(); });
   document.getElementById("rsNovaBtn").addEventListener("click", formVaga);
-  var ok = false; var email = usuario().toLowerCase();
-  RS_TESTERS.forEach(function(t){ if (t === email) ok = true; });
-  if (ok){ lab.style.display = ""; tab.style.display = ""; }
-  else { var iv = setInterval(function(){ var e = usuario().toLowerCase(); if (e){ clearInterval(iv); if (RS_TESTERS.indexOf(e) >= 0){ lab.style.display = ""; tab.style.display = ""; } } }, 1500); setTimeout(function(){ clearInterval(iv); }, 120000); }
+  lab.style.display = ""; tab.style.display = "";
 }
 
 async function carregar(){
