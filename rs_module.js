@@ -39,6 +39,8 @@ function css(){
 }
 
 function montar(){
+  if (document.getElementById("rsTab") && document.getElementById("panel-rs")) return;
+  ["rsTab","rsLabel","panel-rs"].forEach(function(i){ var e = document.getElementById(i); if (e) e.remove(); });
   var tabs = document.querySelector(".sidebar nav.tabs");
   var ancora = tabs && tabs.querySelector('a.tab[href*="elevalife-ats"]');
   if (!tabs || !ancora) return;
@@ -166,5 +168,7 @@ async function detalhe(id, antigo){
 
 css();
 if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", montar); else montar();
+setInterval(montar, 1500);
+console.log("rs_module carregado v2");
 window.rsDebug = { carregar: carregar, api: api };
 })();
