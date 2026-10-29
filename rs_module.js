@@ -191,7 +191,7 @@ function formVaga(pre){
     var acima = tetoAtual !== null && s > 0 && s > tetoAtual + 0.005;
     if (acima) {
       q("f_dir").checked = true; q("f_dir").disabled = true;
-      el.textContent = "Salário acima do teto (" + tetoAtual.toLocaleString("pt-BR", {style: "currency", currency: "BRL"}) + " para a carga informada): exige aprovação da Diretoria.";
+      el.textContent = "Salário acima do teto - Step IV do maior nível do cargo (" + tetoAtual.toLocaleString("pt-BR", {style: "currency", currency: "BRL"}) + " na carga informada): exige aprovação da Diretoria.";
     } else {
       q("f_dir").disabled = false; el.textContent = "";
       q("f_dir").checked = NIVEIS_DIRETORIA.indexOf(q("f_nivel").value) >= 0;
@@ -206,7 +206,7 @@ function formVaga(pre){
     var carga = Number(q("f_carga").value);
     var prop = (carga && carga > 0) ? cheio * (carga / base) : cheio;
     leg.textContent = "Tabela de remuneração: " + cheio.toLocaleString("pt-BR", {style: "currency", currency: "BRL"}) + " (carga cheia " + base + "h)" + (carga ? " - proporcional a " + carga + "h: " + prop.toLocaleString("pt-BR", {style: "currency", currency: "BRL"}) : "");
-    tetoAtual = prop; if (!salEditado) q("f_sal").value = prop.toFixed(2); checaTeto();
+    var fator = (carga && carga > 0) ? carga / base : 1; var mx = null; REMUNERACAO_TABLE.forEach(function(r){ if (r.funcao === c) { var v = Math.max(r.stepI, r.stepII, r.stepIII, r.stepIV); if (mx === null || v > mx) mx = v; } }); tetoAtual = (mx === null) ? null : mx * fator; if (!salEditado) q("f_sal").value = prop.toFixed(2); checaTeto();
   }
   q("f_cargo").addEventListener("input", function(){ perfis(); salAuto(); q("f_nivel").value = nivelSlaPorCargo(q("f_cargo").value); nivelSla(); });
   q("f_perfil").addEventListener("change", salAuto); q("f_carga").addEventListener("input", salAuto);
