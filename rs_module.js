@@ -53,13 +53,30 @@ function montar(){
   var ref = document.getElementById("panel-ajuda");
   ref.parentNode.insertBefore(painel, ref);
   tab.addEventListener("click", function(){ document.querySelectorAll(".tab").forEach(function(x){ x.classList.remove("active"); }); document.querySelectorAll(".panel").forEach(function(x){ x.classList.remove("active"); }); tab.classList.add("active"); painel.classList.add("active"); var cb = document.getElementById("clientbarWrap"); if (cb) cb.style.display = "none"; carregar(); });
-  document.getElementById("rsNovaBtn").addEventListener("click", formVaga);
+  document.getElementById("rsNovaBtn").addEventListener("click", function(){ formVaga(); });
   lab.style.display = ""; tab.style.display = "";
 }
 
+var reqs = [];
+var reqErro = "";
+async function carregarRequisicoes(){
+  reqs = []; reqErro = "";
+  try {
+    if (typeof graphFetch !== "function" || typeof COBERTURAS_GRAPH_BASE === "undefined") { reqErro = "Login Microsoft necessario para listar as requisicoes."; return; }
+    var d = await graphFetch(COBERTURAS_GRAPH_BASE + "/items?expand=fields&$top=999");
+    reqs = (d.value || []).map(function(it){ var f = it.fields || {}; f.__id = String(it.id); f.__created = it.createdDateTime || null; return f; });
+  } catch(e){ reqErro = "Nao foi possivel ler as requisicoes: " + e.message; }
+}
+function reqPendentes(){
+  var usados = {}; vagas.forEach(function(v){ if (v.origem_id) usados[String(v.origem_id)] = true; });
+  return reqs.filter(function(f){
+    var st = String(f.Status || "").toLowerCase();
+    return (f.Cargo || "") && st.indexOf("cancel") < 0 && st.indexOf("conclu") < 0 && !usados[f.__id];
+  }).sort(function(a, b){ return new Date(b.__created || 0) - new Date(a.__created || 0); });
+}
 async function carregar(){
   var el = document.getElementById("rsLista"); el.innerHTML = "<p>Carregando...</p>";
-  try { vagas = await api("GET", { r: "vagas" }); render(); }
+  try { vagas = await api("GET", { r: "vagas" }); await carregarRequisicoes(); render(); }
   catch(e){ el.innerHTML = '<p style="color:#b02a2a">Erro ao carregar: ' + esc(e.message) + '</p>'; }
 }
 
@@ -68,15 +85,54 @@ function render(){
   vagas.forEach(function(v){ if (v.status === "Aberta") abertas++; if (v.status === "Aguardando aprovação") aguard++; var s = sla(v); if (s && s.rest < 0) venc++; if (v.status !== "Recusada") pos += (v.posicoes.total - v.posicoes.preenchidas); });
   document.getElementById("rsKpis").innerHTML = [["Vagas abertas",abertas],["Aguardando aprovação",aguard],["SLA vencido",venc],["Posições em seleção",pos]].map(function(k){ return '<div class="rs-kpi"><b>' + k[1] + '</b>' + k[0] + '</div>'; }).join("");
   var el = document.getElementById("rsLista");
-  if (!vagas.length){ el.innerHTML = '<p>Nenhuma vaga cadastrada ainda. Clique em "+ Nova vaga".</p>'; return; }
-  var h = '<table class="rs-tbl"><thead><tr><th>Código</th><th>Cargo</th><th>Área</th><th>Motivo</th><th>Posições</th><th>Aprovação</th><th>Status</th><th>SLA</th><th></th></tr></thead><tbody>';
-  vagas.forEach(function(v){
-    var s = sla(v);
-    var ac = v.aprovacao_status === "Aprovada" ? "rs-green" : (v.aprovacao_status === "Recusada" ? "rs-red" : "rs-amber");
-    h += '<tr><td>' + esc(v.codigo) + '</td><td><b>' + esc(v.cargo) + '</b>' + (v.sigilosa ? ' <span class="rs-pill rs-red">sigilosa</span>' : '') + '</td><td>' + esc(v.area) + '</td><td>' + esc(v.motivo) + '</td><td>' + v.posicoes.preenchidas + '/' + v.posicoes.total + '</td><td><span class="rs-pill ' + ac + '">' + esc(v.aprovacao_status) + '</span></td><td>' + esc(v.status) + '</td><td>' + (s ? '<span class="rs-pill ' + s.cls + '" title="Prazo: ' + fmtData(s.fim) + '">' + s.txt + '</span>' : '-') + '</td><td><button class="rs-btn o" data-id="' + esc(v.id) + '">Abrir</button></td></tr>';
-  });
-  el.innerHTML = h + '</tbody></table>';
+  var pend = reqPendentes();
+  var h = '<div class="rs-sec" style="margin-top:0">Requisições de pessoal dos coordenadores aguardando abertura de vaga (' + pend.length + ')</div>';
+  if (reqErro) h += '<p style="font-size:13px;color:#b02a2a">' + esc(reqErro) + '</p>';
+  else if (!pend.length) h += '<p style="font-size:13px;color:#777">Nenhuma requisição pendente. As requisições feitas em Solicitações aparecem aqui.</p>';
+  else {
+    h += '<table class="rs-tbl" style="margin-bottom:18px"><thead><tr><th>Data</th><th>Cliente</th><th>Cargo</th><th>Motivo</th><th>Solicitante</th><th>Salário</th><th></th></tr></thead><tbody>';
+    pend.forEach(function(f){
+      var dt = f.__created ? new Date(f.__created).toLocaleDateString("pt-BR") : "";
+      var sal = (f.ValorRemuneracao !== undefined && f.ValorRemuneracao !== null && f.ValorRemuneracao !== "") ? "R$ " + Number(f.ValorRemuneracao).toLocaleString("pt-BR", {minimumFractionDigits: 2}) : "-";
+      h += '<tr><td>' + dt + '</td><td>' + esc(f.Cliente) + '</td><td><b>' + esc(f.Cargo) + '</b></td><td>' + esc(f.Motivo) + '</td><td>' + esc(f.Solicitante) + '</td><td>' + sal + '</td><td><button class="rs-btn" data-req="' + esc(f.__id) + '">Abrir vaga</button></td></tr>';
+    });
+    h += '</tbody></table>';
+  }
+  h += '<div class="rs-sec">Vagas</div>';
+  if (!vagas.length) h += '<p>Nenhuma vaga cadastrada ainda. Abra uma a partir de uma requisição acima ou clique em "+ Nova vaga".</p>';
+  else {
+    h += '<table class="rs-tbl"><thead><tr><th>Código</th><th>Cargo</th><th>Área</th><th>Motivo</th><th>Posições</th><th>Aprovação</th><th>Status</th><th>SLA</th><th></th></tr></thead><tbody>';
+    vagas.forEach(function(v){
+      var s = sla(v);
+      var ac = v.aprovacao_status === "Aprovada" ? "rs-green" : (v.aprovacao_status === "Recusada" ? "rs-red" : "rs-amber");
+      h += '<tr><td>' + esc(v.codigo) + '</td><td><b>' + esc(v.cargo) + '</b>' + (v.sigilosa ? ' <span class="rs-pill rs-red">sigilosa</span>' : '') + (v.origem === "requisicao-pessoal" ? ' <span class="rs-pill rs-gray">requisição</span>' : '') + '</td><td>' + esc(v.area) + '</td><td>' + esc(v.motivo) + '</td><td>' + v.posicoes.preenchidas + '/' + v.posicoes.total + '</td><td><span class="rs-pill ' + ac + '">' + esc(v.aprovacao_status) + '</span></td><td>' + esc(v.status) + '</td><td>' + (s ? '<span class="rs-pill ' + s.cls + '" title="Prazo: ' + fmtData(s.fim) + '">' + s.txt + '</span>' : '-') + '</td><td><button class="rs-btn o" data-id="' + esc(v.id) + '">Abrir</button></td></tr>';
+    });
+    h += '</tbody></table>';
+  }
+  el.innerHTML = h;
   el.querySelectorAll("button[data-id]").forEach(function(b){ b.addEventListener("click", function(){ detalhe(b.getAttribute("data-id")); }); });
+  el.querySelectorAll("button[data-req]").forEach(function(b){ b.addEventListener("click", function(){
+    var f = reqs.filter(function(x){ return x.__id === b.getAttribute("data-req"); })[0];
+    if (f) formVaga(deRequisicao(f));
+  }); });
+}
+
+function mapMotivo(m){
+  var s = String(m || "").toLowerCase();
+  if (s.indexOf("aument") >= 0) return "Aumento de Quadro";
+  if (s.indexOf("ferias") >= 0 || s.indexOf("férias") >= 0 || s.indexOf("afast") >= 0 || s.indexOf("cobertura") >= 0) return "Cobertura de Férias/Afastamento";
+  if (s.indexOf("tempor") >= 0) return "Substituição Temporária";
+  return "Substituição Definitiva";
+}
+function nivelSlaPorCargo(c){
+  var s = String(c || "").toLowerCase();
+  if (/coordena|gerente|especialista|diretor/.test(s)) return /gerente|especialista|diretor/.test(s) ? "Especialista / Gerente" : "Coordenador";
+  if (/assistente|auxiliar|estagi|recepcion/.test(s)) return "Assistente / Auxiliar";
+  return "Analista";
+}
+function deRequisicao(f){
+  var sig = f.PselSigiloso === true || String(f.PselSigiloso || f.Sigiloso || "").toLowerCase() === "sim";
+  return { cargo: f.Cargo || "", area: f.Area || "", motivo: mapMotivo(f.Motivo), motivo_original: f.Motivo || "", colaborador_substituido: f.ColaboradorSubstituido || f.ProfissionalTitular || "", cliente: f.Cliente || "", carga_horaria: f.CargaHorariaSemanal || "", salario: (f.ValorRemuneracao !== undefined && f.ValorRemuneracao !== null && f.ValorRemuneracao !== "") ? f.ValorRemuneracao : "", tipo_valor: f.TipoValor || "", tipo_contrato: f.TipoContrato || "", beneficios: f.Beneficios || "", requisitos_obrig: f.RequisitosObrigatorios || "", requisitos_dif: f.RequisitosDiferenciais || "", jornada: f.EscalaTurno || "", solicitante: f.Solicitante || f.Coordenador || "", gestor_nome: f.Coordenador || f.Solicitante || "", gestor_email: f.EmailResponsavel || "", sigilosa: sig, origem: "requisicao-pessoal", origem_id: f.__id };
 }
 
 function overlay(html){
@@ -86,28 +142,64 @@ function overlay(html){
   document.body.appendChild(ov); return ov;
 }
 
-function formVaga(){
+function tabelaRemun(){ return (typeof REMUNERACAO_TABLE !== "undefined" && REMUNERACAO_TABLE) ? REMUNERACAO_TABLE : []; }
+function formVaga(pre){
+  pre = pre || {};
   var nv = Object.keys(NIVEIS).map(function(n){ return '<option>' + esc(n) + '</option>'; }).join("");
-  var mt = MOTIVOS.map(function(n){ return '<option>' + esc(n) + '</option>'; }).join("");
-  var ov = overlay('<h3>Nova vaga (homologação)</h3><div class="rs-grid">' +
-    '<div><label>Cargo *</label><input id="f_cargo"></div><div><label>Área</label><input id="f_area"></div>' +
-    '<div><label>Nível do cargo (define SLA e aprovação)</label><select id="f_nivel">' + nv + '</select></div><div><label>SLA (dias úteis)</label><input id="f_sla" type="number" min="1"></div>' +
-    '<div><label>Motivo *</label><select id="f_motivo">' + mt + '</select></div><div><label>Detalhe do motivo (quem substitui / período)</label><input id="f_sub"></div>' +
-    '<div><label>Gestor solicitante</label><input id="f_gestor"></div><div><label>E-mail do gestor</label><input id="f_gemail"></div>' +
-    '<div><label>Cliente</label><input id="f_cliente"></div><div><label>Local de trabalho</label><input id="f_local"></div>' +
-    '<div><label>Salário (R$)</label><input id="f_sal" type="number" min="0" step="0.01"></div><div><label>Nº de posições</label><input id="f_pos" type="number" min="1" max="50" value="1"></div>' +
-    '<div><label>Modelo de trabalho</label><select id="f_modelo"><option>Presencial</option><option>Híbrido</option><option>Remoto</option></select></div><div><label>Jornada / escala</label><input id="f_jornada"></div>' +
-    '<div class="rs-full"><label>Benefícios</label><textarea id="f_ben" rows="2"></textarea></div>' +
+  var mt = MOTIVOS.map(function(n){ return '<option' + (n === pre.motivo ? ' selected' : '') + '>' + esc(n) + '</option>'; }).join("");
+  var cargos = []; tabelaRemun().forEach(function(r){ if (cargos.indexOf(r.funcao) < 0) cargos.push(r.funcao); });
+  var dl = cargos.map(function(c){ return '<option value="' + esc(c) + '">'; }).join("");
+  var tc = ["CLT","Autonomo","PJ"]; var tcEl = document.getElementById("coberturaTipoContrato");
+  if (tcEl){ var o = [].map.call(tcEl.options, function(x){ return x.value; }).filter(Boolean); if (o.length) tc = o; }
+  if (pre.tipo_contrato && tc.indexOf(pre.tipo_contrato) < 0) tc.push(pre.tipo_contrato);
+  var tco = '<option value="">Selecione...</option>' + tc.map(function(x){ return '<option' + (x === pre.tipo_contrato ? ' selected' : '') + '>' + esc(x) + '</option>'; }).join("");
+  var tvo = ["","Liquido","Bruto"].map(function(x){ return '<option value="' + x + '"' + (x === pre.tipo_valor ? ' selected' : '') + '>' + (x || "Selecione...") + '</option>'; }).join("");
+  var aviso = pre.origem === "requisicao-pessoal" ? '<p style="font-size:13px;background:var(--amber-bg);color:var(--amber-tx);padding:8px 10px;border-radius:8px;margin:0 0 10px">Formulário preenchido a partir da requisição de pessoal' + (pre.solicitante ? ' de <b>' + esc(pre.solicitante) + '</b>' : '') + (pre.motivo_original ? ' (motivo informado: ' + esc(pre.motivo_original) + ')' : '') + '. Confira e ajuste se necessário.</p>' : '';
+  var ov = overlay('<h3>' + (pre.origem === "requisicao-pessoal" ? 'Abrir vaga a partir da requisição' : 'Nova vaga') + ' (homologação)</h3>' + aviso + '<div class="rs-grid">' +
+    '<div><label>Cargo *</label><input id="f_cargo" list="rsCargoList" value="' + esc(pre.cargo) + '"><datalist id="rsCargoList">' + dl + '</datalist></div><div><label>Área</label><input id="f_area" value="' + esc(pre.area) + '"></div>' +
+    '<div><label>Perfil do profissional (nível na tabela)</label><select id="f_perfil"></select></div><div><label>Carga horária semanal (h)</label><input id="f_carga" type="number" min="1" max="60" value="' + esc(pre.carga_horaria) + '"></div>' +
+    '<div><label>Salário / remuneração (R$)</label><input id="f_sal" type="number" min="0" step="0.01" value="' + esc(pre.salario) + '"><small id="f_leg" style="color:#777"></small></div><div><label>Líquido ou bruto</label><select id="f_tval">' + tvo + '</select></div>' +
+    '<div><label>Tipo de contrato</label><select id="f_tcont">' + tco + '</select></div><div><label>Nº de posições</label><input id="f_pos" type="number" min="1" max="50" value="1"></div>' +
+    '<div><label>Motivo *</label><select id="f_motivo">' + mt + '</select></div><div><label>Colaborador substituído / detalhe do motivo</label><input id="f_colab" value="' + esc(pre.colaborador_substituido) + '"></div>' +
+    '<div><label>Solicitante / gestor</label><input id="f_gestor" value="' + esc(pre.gestor_nome) + '"></div><div><label>E-mail do responsável</label><input id="f_gemail" value="' + esc(pre.gestor_email) + '"></div>' +
+    '<div><label>Cliente</label><input id="f_cliente" value="' + esc(pre.cliente) + '"></div><div><label>Local de trabalho</label><input id="f_local"></div>' +
+    '<div><label>Escala / turno</label><input id="f_jornada" value="' + esc(pre.jornada) + '"></div><div><label>Modelo de trabalho</label><select id="f_modelo"><option>Presencial</option><option>Híbrido</option><option>Remoto</option></select></div>' +
+    '<div class="rs-full"><label>Requisitos obrigatórios</label><textarea id="f_robrig" rows="2">' + esc(pre.requisitos_obrig) + '</textarea></div>' +
+    '<div class="rs-full"><label>Requisitos diferenciais</label><textarea id="f_rdif" rows="2">' + esc(pre.requisitos_dif) + '</textarea></div>' +
+    '<div class="rs-full"><label>Benefícios</label><textarea id="f_ben" rows="2">' + esc(pre.beneficios) + '</textarea></div>' +
     '<div><label>Equipamentos</label><input id="f_equip"></div><div><label>EPIs / uniforme</label><input id="f_epis"></div>' +
-    '<div><label><input type="checkbox" id="f_dir" style="width:auto"> Exige aprovação da Diretoria</label></div><div><label><input type="checkbox" id="f_sig" style="width:auto"> Vaga sigilosa</label></div>' +
+    '<div><label>Nível do cargo (define o SLA)</label><select id="f_nivel">' + nv + '</select></div><div><label>SLA (dias úteis)</label><input id="f_sla" type="number" min="1"></div>' +
+    '<div><label><input type="checkbox" id="f_dir" style="width:auto"> Exige aprovação da Diretoria</label></div><div><label><input type="checkbox" id="f_sig" style="width:auto"' + (pre.sigilosa ? ' checked' : '') + '> Vaga sigilosa</label></div>' +
     '</div><div class="rs-act"><button class="rs-btn o" id="f_cancel">Cancelar</button><button class="rs-btn" id="f_ok">Criar vaga</button></div>');
   var q = function(i){ return ov.querySelector("#" + i); };
-  function nivel(){ q("f_sla").value = NIVEIS[q("f_nivel").value]; q("f_dir").checked = NIVEIS_DIRETORIA.indexOf(q("f_nivel").value) >= 0; }
-  q("f_nivel").addEventListener("change", nivel); nivel();
+  function nivelSla(){ q("f_sla").value = NIVEIS[q("f_nivel").value]; q("f_dir").checked = NIVEIS_DIRETORIA.indexOf(q("f_nivel").value) >= 0; }
+  q("f_nivel").value = nivelSlaPorCargo(pre.cargo); q("f_nivel").addEventListener("change", nivelSla); nivelSla();
+  var salEditado = (pre.salario !== undefined && pre.salario !== null && pre.salario !== "");
+  q("f_sal").addEventListener("input", function(){ salEditado = true; });
+  function perfis(){
+    var c = q("f_cargo").value.trim(); var sel = q("f_perfil"); var atual = sel.value;
+    var lst = tabelaRemun().filter(function(r){ return r.funcao === c; }).map(function(r){ return r.nivel; });
+    sel.innerHTML = lst.length ? lst.map(function(n){ return '<option>' + esc(n) + '</option>'; }).join("") : '<option value="">(cargo fora da tabela)</option>';
+    if (atual && lst.indexOf(atual) >= 0) sel.value = atual;
+  }
+  function salAuto(){
+    var c = q("f_cargo").value.trim(), n = q("f_perfil").value, leg = q("f_leg");
+    if (typeof remuneracaoInicialPara !== "function") { leg.textContent = ""; return; }
+    var cheio = remuneracaoInicialPara(c, n);
+    if (cheio === null || cheio === undefined) { leg.textContent = ""; return; }
+    var base = (typeof baseHorasParaCargo === "function") ? baseHorasParaCargo(c) : 44;
+    var carga = Number(q("f_carga").value);
+    var prop = (carga && carga > 0) ? cheio * (carga / base) : cheio;
+    leg.textContent = "Tabela de remuneração: " + cheio.toLocaleString("pt-BR", {style: "currency", currency: "BRL"}) + " (carga cheia " + base + "h)" + (carga ? " - proporcional a " + carga + "h: " + prop.toLocaleString("pt-BR", {style: "currency", currency: "BRL"}) : "");
+    if (!salEditado) q("f_sal").value = prop.toFixed(2);
+  }
+  q("f_cargo").addEventListener("input", function(){ perfis(); salAuto(); q("f_nivel").value = nivelSlaPorCargo(q("f_cargo").value); nivelSla(); });
+  q("f_perfil").addEventListener("change", salAuto); q("f_carga").addEventListener("input", salAuto);
+  perfis(); salAuto();
   q("f_cancel").addEventListener("click", function(){ ov.remove(); });
   q("f_ok").addEventListener("click", async function(){
     if (!q("f_cargo").value.trim()) { toast("Informe o cargo.", true); return; }
-    var d = { cargo: q("f_cargo").value.trim(), area: q("f_area").value, motivo: q("f_motivo").value, subtipo_motivo: q("f_sub").value, gestor_nome: q("f_gestor").value, gestor_email: q("f_gemail").value, cliente: q("f_cliente").value, local_trabalho: q("f_local").value, salario: q("f_sal").value ? Number(q("f_sal").value) : null, modelo_trabalho: q("f_modelo").value, jornada: q("f_jornada").value, beneficios: q("f_ben").value, equipamentos: q("f_equip").value, epis: q("f_epis").value, sla_dias: Number(q("f_sla").value) || null, exige_diretoria: q("f_dir").checked, sigilosa: q("f_sig").checked, origem: "painel-hml", num_posicoes: Number(q("f_pos").value) || 1 };
+    var d = { cargo: q("f_cargo").value.trim(), area: q("f_area").value, motivo: q("f_motivo").value, subtipo_motivo: pre.motivo_original || null, colaborador_substituido: q("f_colab").value, gestor_nome: q("f_gestor").value, gestor_email: q("f_gemail").value, solicitante: pre.solicitante || q("f_gestor").value, cliente: q("f_cliente").value, local_trabalho: q("f_local").value, salario: q("f_sal").value ? Number(q("f_sal").value) : null, tipo_valor: q("f_tval").value || null, tipo_contrato: q("f_tcont").value || null, carga_horaria: q("f_carga").value ? Number(q("f_carga").value) : null, modelo_trabalho: q("f_modelo").value, jornada: q("f_jornada").value, requisitos_obrig: q("f_robrig").value, requisitos_dif: q("f_rdif").value, beneficios: q("f_ben").value, equipamentos: q("f_equip").value, epis: q("f_epis").value, sla_dias: Number(q("f_sla").value) || null, exige_diretoria: q("f_dir").checked, sigilosa: q("f_sig").checked, origem: pre.origem || "painel-hml", origem_id: pre.origem_id || null, num_posicoes: Number(q("f_pos").value) || 1 };
     q("f_ok").disabled = true;
     try { await api("POST", null, { acao: "criar_vaga", dados: d }); ov.remove(); toast("Vaga criada. Aguardando aprovação."); carregar(); }
     catch(e){ toast("Erro: " + e.message, true); q("f_ok").disabled = false; }
@@ -136,7 +228,7 @@ async function detalhe(id, antigo){
     }).join("");
     return '<div class="rs-col"><h5>' + esc(e) + ' (' + data.pipeline.filter(function(c){ return c.etapa === e; }).length + ')</h5>' + cards + '</div>';
   }).join("");
-  var campos = [["Área",v.area],["Motivo",v.motivo + (v.subtipo_motivo ? " - " + v.subtipo_motivo : "")],["Gestor",v.gestor_nome],["Cliente",v.cliente],["Local",v.local_trabalho],["Salário",v.salario != null ? "R$ " + Number(v.salario).toLocaleString("pt-BR",{minimumFractionDigits:2}) : ""],["Modelo",v.modelo_trabalho],["Jornada",v.jornada],["Benefícios",v.beneficios],["Equipamentos",v.equipamentos],["EPIs",v.epis]];
+  var campos = [["Área",v.area],["Motivo",v.motivo + (v.colaborador_substituido ? " - " + v.colaborador_substituido : "")],["Solicitante / gestor",v.gestor_nome],["Cliente",v.cliente],["Local",v.local_trabalho],["Salário",v.salario != null ? "R$ " + Number(v.salario).toLocaleString("pt-BR",{minimumFractionDigits:2}) + (v.tipo_valor ? " (" + v.tipo_valor + ")" : "") : ""],["Tipo de contrato",v.tipo_contrato],["Carga horária",v.carga_horaria ? v.carga_horaria + "h/semana" : ""],["Escala / turno",v.jornada],["Modelo",v.modelo_trabalho],["Requisitos obrigatórios",v.requisitos_obrig],["Requisitos diferenciais",v.requisitos_dif],["Benefícios",v.beneficios],["Equipamentos",v.equipamentos],["EPIs",v.epis],["Origem",v.origem === "requisicao-pessoal" ? "Requisição de pessoal" : ""]];
   var cH = campos.filter(function(c){ return c[1]; }).map(function(c){ return '<div><label style="font-size:12px;color:#777">' + c[0] + '</label><div>' + esc(c[1]) + '</div></div>'; }).join("");
   var ov = overlay('<h3>' + esc(v.codigo) + ' - ' + esc(v.cargo) + ' <span class="rs-pill rs-blue">' + esc(v.status) + '</span> ' + (s ? '<span class="rs-pill ' + s.cls + '">SLA: ' + s.txt + ' (prazo ' + fmtData(s.fim) + ')</span>' : '') + '</h3><div class="rs-grid" style="grid-template-columns:repeat(3,1fr)">' + cH + '</div>' +
     '<div class="rs-sec">Aprovação</div>' + aprH + '<div class="rs-sec">Posições</div>' + posH +
@@ -169,6 +261,6 @@ async function detalhe(id, antigo){
 css();
 if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", montar); else montar();
 setInterval(montar, 1500);
-console.log("rs_module carregado v3");
+console.log("rs_module carregado v4");
 window.rsDebug = { carregar: carregar, api: api };
 })();
