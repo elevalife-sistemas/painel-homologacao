@@ -1,5 +1,6 @@
 (function(){
 var RS_URL = "https://elevalife-ats.vercel.app/api/ats";
+var PUB_URL = "https://elevalife-ats.vercel.app/vagas.html";
 var RS_TESTERS = ["cristiano@elevalife.com.br","gisleiny@elevalife.com.br"];
 var NIVEIS = {"Assistente / Auxiliar":20,"Analista":30,"Coordenador":45,"Especialista / Gerente":60};
 var NIVEIS_DIRETORIA = ["Coordenador","Especialista / Gerente"];
@@ -239,17 +240,23 @@ async function detalhe(id, antigo){
   var kb = etapas.map(function(e){
     var cards = data.pipeline.filter(function(c){ return c.etapa === e; }).map(function(c){
       var op = etapas.map(function(x){ return '<option' + (x === c.etapa ? ' selected' : '') + '>' + esc(x) + '</option>'; }).join("");
-      return '<div class="rs-card"><b>' + esc(c.nome) + '</b>' + (c.numero ? ' <span style="color:#777">#' + esc(c.numero) + '</span>' : '') + '<select data-c="' + esc(c.candidato_id) + '">' + op + '</select></div>';
+      return '<div class="rs-card"><b>' + esc(c.nome) + '</b>' + (c.numero ? ' <span style="color:#777">#' + esc(c.numero) + '</span>' : '') + (c.fonte === "publico" ? '<a href="#" data-p="' + esc(c.candidato_id) + '" style="font-size:11px;margin-left:6px">perfil</a>' : '') + '<select data-c="' + esc(c.candidato_id) + '">' + op + '</select></div>';
     }).join("");
     return '<div class="rs-col"><h5>' + esc(e) + ' (' + data.pipeline.filter(function(c){ return c.etapa === e; }).length + ')</h5>' + cards + '</div>';
   }).join("");
   var campos = [["Área",v.area],["Motivo",v.motivo + (v.colaborador_substituido ? " - " + v.colaborador_substituido : "")],["Solicitante / gestor",v.gestor_nome],["Cliente",v.cliente],["Local",v.local_trabalho],["Salário",v.salario != null ? "R$ " + Number(v.salario).toLocaleString("pt-BR",{minimumFractionDigits:2}) + (v.tipo_valor ? " (" + v.tipo_valor + ")" : "") : ""],["Tipo de contrato",v.tipo_contrato],["Carga horária",v.carga_horaria ? v.carga_horaria + "h/semana" : ""],["Escala / turno",v.jornada],["Modelo",v.modelo_trabalho],["Requisitos obrigatórios",v.requisitos_obrig],["Requisitos diferenciais",v.requisitos_dif],["Benefícios",v.beneficios],["Equipamentos",v.equipamentos],["EPIs",v.epis],["Origem",v.origem === "requisicao-pessoal" ? "Requisição de pessoal" : ""]];
   var cH = campos.filter(function(c){ return c[1]; }).map(function(c){ return '<div><label style="font-size:12px;color:#777">' + c[0] + '</label><div>' + esc(c[1]) + '</div></div>'; }).join("");
+  var pubH = '<div class="rs-sec">Publicação na página de vagas</div>' + (v.status === "Aberta" ? '<div style="font-size:13px"><label style="display:inline-flex;gap:6px;align-items:center;margin-right:16px"><input type="checkbox" id="rs_pub"' + (v.publicada ? ' checked' : '') + '> Publicar esta vaga na página pública</label><label style="display:inline-flex;gap:6px;align-items:center"><input type="checkbox" id="rs_cvobr"' + (v.curriculo_obrigatorio ? ' checked' : '') + '> Currículo obrigatório</label>' + (v.publicada && !v.sigilosa ? '<div style="margin-top:6px">Link: <a target="_blank" rel="noopener" href="' + PUB_URL + '?vaga=' + esc(v.id) + '">' + PUB_URL + '?vaga=' + esc(v.id) + '</a></div>' : '') + (v.sigilosa ? '<div style="color:#b45309;margin-top:6px">Vaga sigilosa: não aparece na página pública.</div>' : '') + '</div>' : '<p style="font-size:13px;color:#777">A publicação fica disponível depois da aprovação (vaga Aberta).</p>');
   var ov = overlay('<h3>' + esc(v.codigo) + ' - ' + esc(v.cargo) + ' <span class="rs-pill rs-blue">' + esc(v.status) + '</span> ' + (s ? '<span class="rs-pill ' + s.cls + '">SLA: ' + s.txt + ' (prazo ' + fmtData(s.fim) + ')</span>' : '') + '</h3><div class="rs-grid" style="grid-template-columns:repeat(3,1fr)">' + cH + '</div>' +
-    '<div class="rs-sec">Aprovação</div>' + aprH + '<div class="rs-sec">Posições</div>' + posH +
+    '<div class="rs-sec">Aprovação</div>' + aprH + pubH + '<div class="rs-sec">Posições</div>' + posH +
     '<div class="rs-sec">Candidatos (pipeline)</div>' + (v.status === "Aguardando aprovação" || v.status === "Recusada" ? '<p style="font-size:13px;color:#777">Candidatos só podem ser vinculados após a aprovação da vaga.</p>' : '<div style="display:flex;gap:8px;margin-bottom:8px"><input class="rs-in" id="rs_busca" placeholder="Buscar candidato do banco por nome (mín. 2 letras)"><button class="rs-btn" id="rs_bbtn">Buscar</button></div><div id="rs_res" style="margin-bottom:8px"></div>') +
     '<div class="rs-kb">' + kb + '</div><div class="rs-act"><button class="rs-btn o" id="rs_fecha">Fechar</button></div>');
   ov.querySelector("#rs_fecha").addEventListener("click", function(){ ov.remove(); carregar(); });
+  ["rs_pub","rs_cvobr"].forEach(function(i){ var el = ov.querySelector("#" + i); if (el) el.addEventListener("change", async function(){
+    try { await api("POST", null, { acao: "publicar_vaga", id: id, publicada: ov.querySelector("#rs_pub").checked, curriculo_obrigatorio: ov.querySelector("#rs_cvobr").checked }); toast("Publicação atualizada."); detalhe(id, ov); }
+    catch(e){ toast("Erro: " + e.message, true); }
+  }); });
+  ov.querySelectorAll("a[data-p]").forEach(function(a){ a.addEventListener("click", function(e){ e.preventDefault(); perfil(a.getAttribute("data-p")); }); });
   ov.querySelectorAll("button[data-a]").forEach(function(b){ b.addEventListener("click", async function(){
     var c = prompt(b.getAttribute("data-d") === "Recusada" ? "Motivo da recusa:" : "Comentário (opcional):") || "";
     try { await api("POST", null, { acao: "decidir", aprovacao_id: b.getAttribute("data-a"), decisao: b.getAttribute("data-d"), comentario: c }); toast("Decisão registrada."); detalhe(id, ov); }
@@ -277,5 +284,68 @@ css();
 if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", montar); else montar();
 setInterval(montar, 1500);
 console.log("rs_module carregado v4");
+
+/* ===== Fase 2: perfil do candidato e Banco de Talentos ===== */
+function fmtDT(s){ try { return new Date(s).toLocaleDateString("pt-BR"); } catch(e){ return ""; } }
+async function perfil(id, aoFechar){
+  var c;
+  try { c = await api("GET", { r: "candidato", id: id }); } catch(e){ toast("Erro: " + e.message, true); return; }
+  var linhas = [["E-mail", c.email], ["Telefone", c.telefone], ["Cidade", [c.cidade, c.uf].filter(Boolean).join("/")], ["Cargo de interesse", c.cargo_interesse], ["Área de interesse", c.area_interesse], ["Pretensão salarial", c.pretensao ? Number(c.pretensao).toLocaleString("pt-BR", {style: "currency", currency: "BRL"}) : ""], ["LinkedIn", c.linkedin], ["Resumo", c.resumo], ["Origem", c.origem], ["Entrada", fmtDT(c.criado_em)], ["Consentimento", "ciência do aviso em " + fmtDT(c.consentimento_em) + " (" + (c.consentimento_versao || "sem versão") + ")" + (c.banco_talentos ? "; autorizou o banco de talentos" : "; NÃO autorizou o banco de talentos")]];
+  var h = '<h3>' + esc(c.nome) + '</h3><div class="rs-grid" style="grid-template-columns:repeat(2,1fr)">' + linhas.filter(function(l){ return l[1]; }).map(function(l){ return '<div><label style="font-size:12px;color:#777">' + l[0] + '</label><div>' + esc(l[1]) + '</div></div>'; }).join("") + '</div>' +
+    '<div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap">' + (c.tem_curriculo ? '<button class="rs-btn" id="rp_cv">Abrir currículo</button>' : '<span style="font-size:13px;color:#777;align-self:center">Sem currículo anexado.</span>') + '<button class="rs-btn" id="rp_del" style="color:#b02a2a">Excluir dados (LGPD)</button><button class="rs-btn" id="rp_x" style="margin-left:auto">Fechar</button></div>';
+  var ov = overlay(h);
+  ov.querySelector("#rp_x").addEventListener("click", function(){ ov.remove(); });
+  var cv = ov.querySelector("#rp_cv");
+  if (cv) cv.addEventListener("click", async function(){ try { var r = await fetch(RS_URL + "?r=curriculo-url&id=" + encodeURIComponent(id), { headers: { "x-painel-secret": RECRUTAHUB_API_SECRET } }); var j = await r.json(); if (!r.ok) throw new Error(j.error || "erro"); window.open(j.url, "_blank", "noopener"); } catch(e){ toast("Erro: " + e.message, true); } });
+  ov.querySelector("#rp_del").addEventListener("click", async function(){
+    if (!confirm("Excluir definitivamente os dados e o currículo de " + c.nome + "? Esta ação não pode ser desfeita.")) return;
+    try { await api("POST", null, { acao: "excluir_candidato", id: id }); toast("Dados excluídos."); ov.remove(); if (aoFechar) aoFechar(); } catch(e){ toast("Erro: " + e.message, true); }
+  });
+}
+
+async function vincularBanco(cand){
+  var abertas = [];
+  try { abertas = (await api("GET", { r: "vagas" })).filter(function(v){ return v.status === "Aberta"; }); } catch(e){ toast("Erro: " + e.message, true); return; }
+  if (!abertas.length) { toast("Não há vagas Abertas para vincular.", true); return; }
+  var ov = overlay('<h3>Vincular ' + esc(cand.nome) + ' a uma vaga</h3><select id="rv_v" style="width:100%">' + abertas.map(function(v){ return '<option value="' + esc(v.id) + '">' + esc(v.codigo + " - " + v.cargo) + '</option>'; }).join("") + '</select><div style="margin-top:14px;display:flex;gap:8px"><button class="rs-btn rs-primary" id="rv_ok">Vincular</button><button class="rs-btn" id="rv_x">Cancelar</button></div>');
+  ov.querySelector("#rv_x").addEventListener("click", function(){ ov.remove(); });
+  ov.querySelector("#rv_ok").addEventListener("click", async function(){
+    try { await api("POST", null, { acao: "vincular_candidato", vaga_id: ov.querySelector("#rv_v").value, candidato_id: cand.id }); toast("Candidato vinculado à vaga."); ov.remove(); }
+    catch(e){ toast("Erro: " + e.message, true); }
+  });
+}
+
+var talentos = [];
+async function buscarBanco(){
+  var box = document.getElementById("rtLista"); if (!box) return;
+  box.innerHTML = '<p style="color:#777">Buscando...</p>';
+  var p = { r: "talentos", q: document.getElementById("rtQ").value.trim(), cargo: document.getElementById("rtCargo").value.trim(), cidade: document.getElementById("rtCidade").value.trim() };
+  var f = document.getElementById("rtFonte").value; if (f) p.fonte = f;
+  try { talentos = await api("GET", p); } catch(e){ box.innerHTML = '<span style="color:#b02a2a">' + esc(e.message) + '</span>'; return; }
+  if (!talentos.length) { box.innerHTML = '<p style="color:#777">Nenhum candidato encontrado.</p>'; return; }
+  box.innerHTML = '<div style="font-size:12px;color:#777;margin-bottom:6px">' + talentos.length + ' resultado(s)' + (talentos.length >= 100 ? ' (mostrando os 100 mais recentes; refine a busca)' : '') + '</div><table class="rs-tbl"><thead><tr><th>Nome</th><th>Cargo / área</th><th>Cidade</th><th>Contato</th><th>Origem</th><th>Entrada</th><th></th></tr></thead><tbody>' +
+    talentos.map(function(c, i){ return '<tr><td><b>' + esc(c.nome) + '</b>' + (c.numero ? ' <span style="color:#777">#' + esc(c.numero) + '</span>' : '') + (c.etapa ? '<div style="font-size:11px;color:#777">' + esc(c.etapa) + '</div>' : '') + '</td><td>' + esc([c.cargo, c.area].filter(Boolean).join(" / ")) + '</td><td>' + esc(c.cidade || "") + '</td><td>' + esc([c.email, c.telefone].filter(Boolean).join(" · ")) + '</td><td>' + (c.fonte === "publico" ? '<span class="rs-pill rs-green">Página pública</span>' : '<span class="rs-pill rs-blue">RecrutaHub atual</span>') + '</td><td>' + fmtDT(c.criado_em) + '</td><td style="white-space:nowrap">' + (c.fonte === "publico" ? '<button class="rs-btn" data-pf="' + i + '">Perfil</button> ' : '') + '<button class="rs-btn" data-vc="' + i + '">Vincular</button></td></tr>'; }).join("") + '</tbody></table>';
+  box.querySelectorAll("button[data-pf]").forEach(function(b){ b.addEventListener("click", function(){ perfil(talentos[Number(b.getAttribute("data-pf"))].id, buscarBanco); }); });
+  box.querySelectorAll("button[data-vc]").forEach(function(b){ b.addEventListener("click", function(){ vincularBanco(talentos[Number(b.getAttribute("data-vc"))]); }); });
+}
+
+function montarBanco(){
+  if (document.getElementById("rtTab") && document.getElementById("panel-rt")) return;
+  ["rtTab","panel-rt"].forEach(function(i){ var e = document.getElementById(i); if (e) e.remove(); });
+  var tabs = document.querySelector(".sidebar nav.tabs"), rs = document.getElementById("rsTab"), ref = document.getElementById("panel-ajuda");
+  if (!tabs || !rs || !ref || rs.style.display === "none") return;
+  var tab = document.createElement("div"); tab.className = "tab tab-sub"; tab.id = "rtTab"; tab.setAttribute("data-tab","rt");
+  tab.innerHTML = '<span class="tab-icon">&#128269;</span>Banco de Talentos (piloto)';
+  tabs.insertBefore(tab, rs.nextSibling);
+  var painel = document.createElement("div"); painel.className = "panel"; painel.id = "panel-rt";
+  painel.innerHTML = '<div class="kanban-header"><h2>Banco de Talentos (piloto)</h2></div><div style="padding:0 4px 10px;font-size:13px;color:#555">Candidatos da página pública que autorizaram o banco de talentos e candidatos do RecrutaHub atual.</div>' +
+    '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px"><input id="rtQ" placeholder="Busca livre (nome, e-mail, palavra-chave)" style="flex:2;min-width:220px"><input id="rtCargo" placeholder="Cargo / área" style="flex:1;min-width:140px"><input id="rtCidade" placeholder="Cidade" style="flex:1;min-width:120px"><select id="rtFonte"><option value="">Todas as origens</option><option value="publico">Página pública</option><option value="recrutahub">RecrutaHub atual</option></select><button class="rs-btn rs-primary" id="rtBuscar">Buscar</button></div><div id="rtLista"></div>';
+  ref.parentNode.insertBefore(painel, ref);
+  tab.addEventListener("click", function(){ document.querySelectorAll(".tab").forEach(function(x){ x.classList.remove("active"); }); document.querySelectorAll(".panel").forEach(function(x){ x.classList.remove("active"); }); tab.classList.add("active"); painel.classList.add("active"); var cb = document.getElementById("clientbarWrap"); if (cb) cb.style.display = "none"; buscarBanco(); });
+  document.getElementById("rtBuscar").addEventListener("click", buscarBanco);
+  ["rtQ","rtCargo","rtCidade"].forEach(function(i){ document.getElementById(i).addEventListener("keydown", function(e){ if (e.key === "Enter") buscarBanco(); }); });
+}
+setInterval(montarBanco, 1500);
+
 window.rsDebug = { carregar: carregar, api: api };
 })();
