@@ -172,26 +172,41 @@ function formVaga(pre){
     '<div><label><input type="checkbox" id="f_dir" style="width:auto"> Exige aprovação da Diretoria</label></div><div><label><input type="checkbox" id="f_sig" style="width:auto"' + (pre.sigilosa ? ' checked' : '') + '> Vaga sigilosa</label></div>' +
     '</div><div class="rs-act"><button class="rs-btn o" id="f_cancel">Cancelar</button><button class="rs-btn" id="f_ok">Criar vaga</button></div>');
   var q = function(i){ return ov.querySelector("#" + i); };
-  function nivelSla(){ q("f_sla").value = NIVEIS[q("f_nivel").value]; q("f_dir").checked = NIVEIS_DIRETORIA.indexOf(q("f_nivel").value) >= 0; }
+  function nivelSla(){ nivelSla0(); if (typeof checaTeto === "function") checaTeto(); }
+  function nivelSla0(){ q("f_sla").value = NIVEIS[q("f_nivel").value]; q("f_dir").checked = NIVEIS_DIRETORIA.indexOf(q("f_nivel").value) >= 0; }
   q("f_nivel").value = nivelSlaPorCargo(pre.cargo); q("f_nivel").addEventListener("change", nivelSla); nivelSla();
   var salEditado = (pre.salario !== undefined && pre.salario !== null && pre.salario !== "");
-  q("f_sal").addEventListener("input", function(){ salEditado = true; });
+  q("f_sal").addEventListener("input", function(){ salEditado = true; checaTeto(); });
   function perfis(){
     var c = q("f_cargo").value.trim(); var sel = q("f_perfil"); var atual = sel.value;
     var lst = tabelaRemun().filter(function(r){ return r.funcao === c; }).map(function(r){ return r.nivel; });
     sel.innerHTML = lst.length ? lst.map(function(n){ return '<option>' + esc(n) + '</option>'; }).join("") : '<option value="">(cargo fora da tabela)</option>';
     if (atual && lst.indexOf(atual) >= 0) sel.value = atual;
   }
+  var tetoAtual = null;
+  function checaTeto(){
+    var el = q("f_teto");
+    if (!el) { el = document.createElement("div"); el.id = "f_teto"; el.style.cssText = "color:#b45309;font-size:12px;font-weight:600;margin-top:4px"; q("f_leg").parentNode.appendChild(el); }
+    var s = Number(String(q("f_sal").value).replace(",", "."));
+    var acima = tetoAtual !== null && s > 0 && s > tetoAtual + 0.005;
+    if (acima) {
+      q("f_dir").checked = true; q("f_dir").disabled = true;
+      el.textContent = "Salário acima do teto (" + tetoAtual.toLocaleString("pt-BR", {style: "currency", currency: "BRL"}) + " para a carga informada): exige aprovação da Diretoria.";
+    } else {
+      q("f_dir").disabled = false; el.textContent = "";
+      q("f_dir").checked = NIVEIS_DIRETORIA.indexOf(q("f_nivel").value) >= 0;
+    }
+  }
   function salAuto(){
     var c = q("f_cargo").value.trim(), n = q("f_perfil").value, leg = q("f_leg");
-    if (typeof remuneracaoInicialPara !== "function") { leg.textContent = ""; return; }
+    if (typeof remuneracaoInicialPara !== "function") { leg.textContent = ""; tetoAtual = null; checaTeto(); return; }
     var cheio = remuneracaoInicialPara(c, n);
-    if (cheio === null || cheio === undefined) { leg.textContent = ""; return; }
+    if (cheio === null || cheio === undefined) { leg.textContent = ""; tetoAtual = null; checaTeto(); return; }
     var base = (typeof baseHorasParaCargo === "function") ? baseHorasParaCargo(c) : 44;
     var carga = Number(q("f_carga").value);
     var prop = (carga && carga > 0) ? cheio * (carga / base) : cheio;
     leg.textContent = "Tabela de remuneração: " + cheio.toLocaleString("pt-BR", {style: "currency", currency: "BRL"}) + " (carga cheia " + base + "h)" + (carga ? " - proporcional a " + carga + "h: " + prop.toLocaleString("pt-BR", {style: "currency", currency: "BRL"}) : "");
-    if (!salEditado) q("f_sal").value = prop.toFixed(2);
+    tetoAtual = prop; if (!salEditado) q("f_sal").value = prop.toFixed(2); checaTeto();
   }
   q("f_cargo").addEventListener("input", function(){ perfis(); salAuto(); q("f_nivel").value = nivelSlaPorCargo(q("f_cargo").value); nivelSla(); });
   q("f_perfil").addEventListener("change", salAuto); q("f_carga").addEventListener("input", salAuto);
