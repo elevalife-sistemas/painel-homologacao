@@ -225,6 +225,15 @@ function formVaga(pre){
 async function detalhe(id, antigo){
   var data;
   try { data = await api("GET", { r: "vaga", id: id }); } catch(e){ toast("Erro: " + e.message, true); return; }
+  var tri = {};
+  try { (await api("GET", { r: "triagens", vaga_id: id }) || []).forEach(function(x){ tri[x.candidato_id] = x; }); } catch(e){}
+  function triCard(c){
+    var t = tri[c.candidato_id], h = '<div style="margin:4px 0;font-size:11px">';
+    if (t) h += '<span class="rs-pill ' + (t.score >= 70 ? "rs-green" : (t.score >= 45 ? "rs-amber" : "rs-red")) + '">IA ' + Math.round(t.score) + '</span> <a href="#" data-tv="' + esc(c.candidato_id) + '">ver análise</a> · ';
+    h += '<a href="#" data-ia="' + esc(c.candidato_id) + '">' + (t ? "refazer IA" : "Triar com IA") + '</a>';
+    if (["Aprovado", "Carta Oferta", "Contratado"].indexOf(c.etapa) >= 0) h += ' · <a href="#" data-of="' + esc(c.candidato_id) + '">Carta-oferta</a>';
+    return h + '</div>';
+  }
   if (antigo) antigo.remove();
   var v = data.vaga, etapas = data.etapas || ETAPAS_FALLBACK, s = sla(v);
   var ordem = ["gestor","coordenador","diretoria"], rot = { gestor: "Gestor", coordenador: "Coordenador (confirma necessidade)", diretoria: "Diretoria" };
@@ -240,7 +249,7 @@ async function detalhe(id, antigo){
   var kb = etapas.map(function(e){
     var cards = data.pipeline.filter(function(c){ return c.etapa === e; }).map(function(c){
       var op = etapas.map(function(x){ return '<option' + (x === c.etapa ? ' selected' : '') + '>' + esc(x) + '</option>'; }).join("");
-      return '<div class="rs-card"><b>' + esc(c.nome) + '</b>' + (c.numero ? ' <span style="color:#777">#' + esc(c.numero) + '</span>' : '') + (c.fonte === "publico" ? '<a href="#" data-p="' + esc(c.candidato_id) + '" style="font-size:11px;margin-left:6px">perfil</a>' : '') + '<select data-c="' + esc(c.candidato_id) + '">' + op + '</select></div>';
+      return '<div class="rs-card"><b>' + esc(c.nome) + '</b>' + (c.numero ? ' <span style="color:#777">#' + esc(c.numero) + '</span>' : '') + (c.fonte === "publico" ? '<a href="#" data-p="' + esc(c.candidato_id) + '" style="font-size:11px;margin-left:6px">perfil</a>' : '') + triCard(c) + '<select data-c="' + esc(c.candidato_id) + '">' + op + '</select></div>';
     }).join("");
     return '<div class="rs-col"><h5>' + esc(e) + ' (' + data.pipeline.filter(function(c){ return c.etapa === e; }).length + ')</h5>' + cards + '</div>';
   }).join("");
@@ -255,6 +264,14 @@ async function detalhe(id, antigo){
   ["rs_pub","rs_cvobr"].forEach(function(i){ var el = ov.querySelector("#" + i); if (el) el.addEventListener("change", async function(){
     try { await api("POST", null, { acao: "publicar_vaga", id: id, publicada: ov.querySelector("#rs_pub").checked, curriculo_obrigatorio: ov.querySelector("#rs_cvobr").checked }); toast("Publicação atualizada."); detalhe(id, ov); }
     catch(e){ toast("Erro: " + e.message, true); }
+  }); });
+  function candPorId(i){ return data.pipeline.filter(function(x){ return x.candidato_id === i; })[0]; }
+  ov.querySelectorAll("a[data-tv]").forEach(function(a){ a.addEventListener("click", function(ev){ ev.preventDefault(); var i = a.getAttribute("data-tv"); triDetalhe(candPorId(i), tri[i]); }); });
+  ov.querySelectorAll("a[data-of]").forEach(function(a){ a.addEventListener("click", function(ev){ ev.preventDefault(); cartaOferta(v, candPorId(a.getAttribute("data-of"))); }); });
+  ov.querySelectorAll("a[data-ia]").forEach(function(a){ a.addEventListener("click", async function(ev){
+    ev.preventDefault(); if (a.getAttribute("data-busy")) return; a.setAttribute("data-busy", "1"); var old = a.textContent; a.textContent = "analisando...";
+    try { await api("POST", { acao: "triar_candidato", vaga_id: id, candidato_id: a.getAttribute("data-ia") }); toast("Triagem concluída."); detalhe(id, ov); }
+    catch(e){ a.textContent = old; a.removeAttribute("data-busy"); toast("Erro: " + e.message, true); }
   }); });
   ov.querySelectorAll("a[data-p]").forEach(function(a){ a.addEventListener("click", function(e){ e.preventDefault(); perfil(a.getAttribute("data-p")); }); });
   ov.querySelectorAll("button[data-a]").forEach(function(b){ b.addEventListener("click", async function(){
@@ -287,6 +304,73 @@ console.log("rs_module carregado v4");
 
 /* ===== Fase 2: perfil do candidato e Banco de Talentos ===== */
 function fmtDT(s){ try { return new Date(s).toLocaleDateString("pt-BR"); } catch(e){ return ""; } }
+function modalTxt(titulo, html){
+  var ov = document.createElement("div"); ov.style.cssText = "position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.5);z-index:100000;display:flex;align-items:center;justify-content:center;padding:16px";
+  ov.innerHTML = '<div style="background:#fff;border-radius:10px;max-width:560px;width:100%;max-height:90vh;overflow:auto;padding:18px;font:14px Arial,sans-serif;color:#222"><h3 style="margin:0 0 10px">' + esc(titulo) + '</h3>' + html + '<div style="text-align:right;margin-top:14px"><button class="rs-btn" data-x="1">Fechar</button></div></div>';
+  document.body.appendChild(ov);
+  ov.querySelector("[data-x]").addEventListener("click", function(){ ov.remove(); });
+  return ov;
+}
+function lista(a){ return (a || []).map(function(x){ return "<li>" + esc(x) + "</li>"; }).join(""); }
+function triDetalhe(c, t){
+  modalTxt("Triagem por IA - " + c.nome,
+    '<p><b>Nota ' + Math.round(t.score) + '/100</b> (técnica ' + (t.score_tecnico != null ? Math.round(t.score_tecnico) : "-") + ', comportamental ' + (t.score_comportamental != null ? Math.round(t.score_comportamental) : "-") + ') - <b>' + esc(t.recomendacao) + '</b></p>' +
+    '<p>' + esc(t.resumo) + '</p><b>Pontos fortes</b><ul>' + lista(t.fortes) + '</ul><b>Lacunas / riscos</b><ul>' + lista(t.lacunas) + '</ul>' +
+    '<p style="font-size:11px;color:#777">Apoio à decisão: a avaliação é sempre do RH. Base: ' + esc(t.fonte_dados || "-") + (t.por ? " - por " + esc(t.por) : "") + ".</p>");
+}
+function carregarDocx(){
+  return new Promise(function(res, rej){
+    if (window.docx && window.docx.Packer) return res(window.docx);
+    var sc = document.createElement("script"); sc.src = "https://cdn.jsdelivr.net/npm/docx@8.5.0/build/index.umd.js";
+    sc.onload = function(){ res(window.docx); }; sc.onerror = function(){ rej(new Error("Não foi possível carregar o gerador de Word.")); };
+    document.head.appendChild(sc);
+  });
+}
+function dataExt(iso){ if (!iso) return ""; var p = iso.split("-"); return new Date(+p[0], +p[1] - 1, +p[2]).toLocaleDateString("pt-BR", { day: "numeric", month: "long", year: "numeric" }); }
+function cartaOferta(v, c){
+  var d7 = new Date(); d7.setDate(d7.getDate() + 7); var val = d7.getFullYear() + "-" + ("0" + (d7.getMonth() + 1)).slice(-2) + "-" + ("0" + d7.getDate()).slice(-2);
+  var inp = "width:100%;box-sizing:border-box;padding:6px;margin:2px 0 8px;border:1px solid #ccc;border-radius:6px";
+  var f = function(id, rot, val2, tipo){ return '<label style="font-size:12px;color:#555">' + rot + '</label><input id="' + id + '" type="' + (tipo || "text") + '" value="' + esc(val2 == null ? "" : val2) + '" style="' + inp + '">'; };
+  var ov = modalTxt("Carta-oferta - " + c.nome,
+    f("of_cargo", "Cargo", v.cargo) + f("of_sal", "Remuneração mensal (R$)", v.salario, "number") + f("of_contrato", "Tipo de contrato", v.tipo_contrato || "CLT") +
+    f("of_carga", "Carga horária (h/semana)", v.carga_horaria) + f("of_escala", "Escala / turno", v.jornada) + f("of_local", "Local de trabalho", v.local_trabalho) +
+    '<label style="font-size:12px;color:#555">Benefícios</label><textarea id="of_benef" rows="3" style="' + inp + '">' + esc(v.beneficios || "") + '</textarea>' +
+    f("of_inicio", "Data prevista de início", "", "date") + f("of_valid", "Proposta válida até", val, "date") + f("of_resp", "Assinatura (nome do RH)", "") +
+    '<button class="rs-btn" id="of_go">Gerar Word (.docx)</button> ');
+  ov.querySelector("#of_go").addEventListener("click", async function(){
+    var g = function(i){ return ov.querySelector("#" + i).value.trim(); };
+    if (!g("of_sal") || !g("of_inicio")) { toast("Informe a remuneração e a data de início.", true); return; }
+    try {
+      var D = await carregarDocx();
+      var sal = "R$ " + Number(g("of_sal")).toLocaleString("pt-BR", { minimumFractionDigits: 2 }) + " mensais" + (v.tipo_valor ? " (" + String(v.tipo_valor).toLowerCase() + ")" : "");
+      var P = function(t, o){ o = o || {}; return new D.Paragraph({ alignment: o.al, spacing: { after: o.after == null ? 160 : o.after }, children: [new D.TextRun({ text: t, bold: !!o.b, size: o.size || 22, color: o.cor, font: "Arial" })] }); };
+      var linhas = [["Cargo", g("of_cargo")], ["Área", v.area || ""], ["Tipo de contrato", g("of_contrato")], ["Remuneração", sal], ["Carga horária", g("of_carga") ? g("of_carga") + " horas semanais" : ""], ["Escala / turno", g("of_escala")], ["Local de trabalho", g("of_local")], ["Benefícios", g("of_benef")], ["Data prevista de início", dataExt(g("of_inicio"))]].filter(function(x){ return x[1]; });
+      var borda = { style: D.BorderStyle.SINGLE, size: 4, color: "BBBBBB" };
+      var bordas = { top: borda, bottom: borda, left: borda, right: borda };
+      var cel = function(t, w, b){ return new D.TableCell({ width: { size: w, type: D.WidthType.DXA }, borders: bordas, margins: { top: 80, bottom: 80, left: 120, right: 120 }, shading: b ? { type: D.ShadingType.CLEAR, fill: "F3E8EA" } : undefined, children: [P(t, { b: b, after: 0, size: 21 })] }); };
+      var tab = new D.Table({ width: { size: 9026, type: D.WidthType.DXA }, columnWidths: [2800, 6226], rows: linhas.map(function(x){ return new D.TableRow({ children: [cel(x[0], 2800, true), cel(x[1], 6226, false)] }); }) });
+      var hoje = new Date().toLocaleDateString("pt-BR", { day: "numeric", month: "long", year: "numeric" });
+      var doc = new D.Document({ sections: [{ properties: {}, children: [
+        P("ElevaLife", { b: true, size: 32, cor: "7A1F2B", after: 60 }), P("CARTA-OFERTA", { b: true, size: 26, after: 300 }),
+        P(hoje, { al: D.AlignmentType.RIGHT, after: 300 }),
+        P("Prezado(a) " + c.nome + ",", { b: true }),
+        P("É com satisfação que a ElevaLife formaliza o convite para você integrar o nosso time. Ao final do processo seletivo, você foi aprovado(a) para a posição abaixo, nas seguintes condições:", { al: D.AlignmentType.JUSTIFIED }),
+        tab, P("", { after: 120 }),
+        P("A efetivação está condicionada à entrega da documentação admissional e à aprovação nos exames exigidos. Esta proposta é válida até " + dataExt(g("of_valid")) + "; após essa data, será necessária nova confirmação.", { al: D.AlignmentType.JUSTIFIED }),
+        P("Para aceitar, basta assinar abaixo e devolver este documento ao RH. Estamos à disposição para esclarecer qualquer dúvida.", { al: D.AlignmentType.JUSTIFIED, after: 400 }),
+        P("Atenciosamente,", { after: 500 }),
+        P("______________________________", { after: 40 }), P(g("of_resp") || "Recursos Humanos", { b: true, after: 0 }), P("ElevaLife", { after: 400 }),
+        P("De acordo em ____/____/______", { after: 500 }), P("______________________________", { after: 40 }), P(c.nome, { b: true, after: 300 }),
+        P("Minuta gerada pelo painel em ambiente de homologação - sujeita à validação do DP/Jurídico.", { size: 16, cor: "888888" })
+      ] }] });
+      var blob = await D.Packer.toBlob(doc);
+      var a = document.createElement("a"); a.href = URL.createObjectURL(blob);
+      a.download = ("Carta-oferta_" + c.nome + "_" + g("of_cargo")).replace(/[^A-Za-z0-9À-ÿ_-]+/g, "_") + ".docx";
+      document.body.appendChild(a); a.click(); setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+      toast("Carta-oferta gerada.");
+    } catch(e){ toast("Erro: " + e.message, true); }
+  });
+}
 async function perfil(id, aoFechar){
   var c;
   try { c = await api("GET", { r: "candidato", id: id }); } catch(e){ toast("Erro: " + e.message, true); return; }
