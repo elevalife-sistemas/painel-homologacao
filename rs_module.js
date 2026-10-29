@@ -52,7 +52,7 @@ function montar(){
   painel.innerHTML = '<div class="kanban-header"><h2 class="kanban-client-name">Recrutamento e Seleção <span class="rs-pill rs-amber" style="font-size:11px">PILOTO</span></h2><span class="badge-note">Ambiente de homologação - dados separados da produção</span><button type="button" class="btn-new" id="rsNovaBtn" style="margin-left:auto">+ Nova vaga</button></div><div class="rs-kpis" id="rsKpis"></div><div id="rsLista"></div>';
   var ref = document.getElementById("panel-ajuda");
   ref.parentNode.insertBefore(painel, ref);
-  tab.addEventListener("click", function(){ var cb = document.getElementById("clientbarWrap"); if (cb) cb.style.display = "none"; carregar(); });
+  tab.addEventListener("click", function(){ document.querySelectorAll(".tab").forEach(function(x){ x.classList.remove("active"); }); document.querySelectorAll(".panel").forEach(function(x){ x.classList.remove("active"); }); tab.classList.add("active"); painel.classList.add("active"); var cb = document.getElementById("clientbarWrap"); if (cb) cb.style.display = "none"; carregar(); });
   document.getElementById("rsNovaBtn").addEventListener("click", formVaga);
   lab.style.display = ""; tab.style.display = "";
 }
@@ -169,6 +169,6 @@ async function detalhe(id, antigo){
 css();
 if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", montar); else montar();
 setInterval(montar, 1500);
-console.log("rs_module carregado v2");
+console.log("rs_module carregado v3");
 window.rsDebug = { carregar: carregar, api: api };
 })();
