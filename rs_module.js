@@ -620,12 +620,12 @@ function chHBarras(itens, suf){
   var max = Math.max.apply(null, itens.map(function(i){ return i.v; }).concat([1])), ml = 130, W = 520, rh = 28, H = itens.length * rh + 8, g = '';
   itens.forEach(function(i, k){
     var y = 4 + k * rh, w = Math.max(i.v ? 6 : 0, (i.v / max) * (W - ml - 60));
-    g += '<text x="' + (ml - 8) + '" y="' + (y + 16) + '" text-anchor="end" font-size="12" fill="#444">' + esc(i.nome) + '</text><rect x="' + ml + '" y="' + (y + 3) + '" width="' + (W - ml - 50) + '" height="18" rx="4" fill="#f1f2f4"/><rect x="' + ml + '" y="' + (y + 3) + '" width="' + w.toFixed(1) + '" height="18" rx="4" fill="' + (i.cor || CH.verde) + '"/><text x="' + (ml + Math.max(w, 30) - 6).toFixed(1) + '" y="' + (y + 16) + '" text-anchor="end" font-size="12" font-weight="700" fill="#fff">' + chFmt(i.v) + (suf || '') + '</text>';
+    g += '<text x="' + (ml - 8) + '" y="' + (y + 16) + '" text-anchor="end" font-size="12" fill="#444">' + esc(i.nome) + '</text><rect x="' + ml + '" y="' + (y + 3) + '" width="' + (W - ml - 50) + '" height="18" rx="4" fill="#f1f2f4"/><rect x="' + ml + '" y="' + (y + 3) + '" width="' + w.toFixed(1) + '" height="18" rx="4" fill="' + (i.cor || CH.verde) + '"/><text x="' + (w < 46 ? ml + w + 6 : ml + w - 6).toFixed(1) + '" y="' + (y + 16) + '" text-anchor="' + (w < 46 ? 'start' : 'end') + '" font-size="12" font-weight="700" fill="' + (w < 46 ? '#333' : '#fff') + '">' + chFmt(i.v) + (suf || '') + '</text>';
   });
   return '<svg viewBox="0 0 ' + W + ' ' + H + '" class="ch-svg">' + g + '</svg>';
 }
 function chLinha(pts, suf){
-  var W = 520, H = 250, ml = 40, mr = 20, mt = 28, mb = 38, vs = pts.map(function(p){ return p.v; }), mx = Math.max.apply(null, vs.concat([1])), top = Math.ceil(mx * 1.15 / 1) || 1, g = '', pw = W - ml - mr, ph = H - mt - mb;
+  var W = 520, H = 250, ml = 40, mr = 20, mt = 28, mb = 38, vs = pts.map(function(p){ return p.v; }), mx = Math.max.apply(null, vs.concat([1])), top = (Math.ceil(Math.ceil(mx * 1.15) / 4) * 4) || 4, g = '', pw = W - ml - mr, ph = H - mt - mb;
   var nt = 4; for (var t = 0; t <= nt; t++){ var val = top * t / nt, yy = mt + ph - (val / top) * ph; g += '<line x1="' + ml + '" x2="' + (W - mr) + '" y1="' + yy + '" y2="' + yy + '" stroke="#e6e8eb"/><text x="' + (ml - 6) + '" y="' + (yy + 4) + '" text-anchor="end" font-size="11" fill="#7a7f85">' + (Math.round(val * 10) / 10) + (suf || '') + '</text>'; }
   var X = function(k){ return ml + (pts.length > 1 ? pw * k / (pts.length - 1) : pw / 2); }, Y = function(v){ return mt + ph - (v / top) * ph; };
   var d = pts.map(function(p, k){ return (k ? 'L' : 'M') + X(k).toFixed(1) + ' ' + Y(p.v).toFixed(1); }).join(' ');
