@@ -505,5 +505,54 @@ function montarAdm(){
 }
 setInterval(montarAdm, 1500);
 
+/* ===== Fase 4: indicadores de R&S e unificação do Banco de Talentos ===== */
+async function carregarInd(){
+  var box = document.getElementById("inLista"); if (!box) return;
+  box.innerHTML = '<p style="color:#777">Calculando...</p>';
+  var vs, ads, pipes = [], tris = 0;
+  try {
+    vs = await api("GET", { r: "vagas" }); ads = await api("GET", { r: "admissoes" });
+    var ativas = vs.filter(function(v){ return v.status === "Aberta" || v.status === "Preenchida"; });
+    for (var i = 0; i < ativas.length; i++){ try { var d = await api("GET", { r: "vaga", id: ativas[i].id }); pipes.push({ v: ativas[i], p: d.pipeline || [], mov: d.movimentos || [] }); var t = await api("GET", { r: "triagens", vaga_id: ativas[i].id }); tris += (t || []).length; } catch(e){} }
+  } catch(e){ box.innerHTML = '<span style="color:#b02a2a">' + esc(e.message) + '</span>'; return; }
+  var por = function(st){ return vs.filter(function(v){ return v.status === st; }).length; };
+  var comSla = vs.filter(function(v){ return sla(v); }), venc = comSla.filter(function(v){ return sla(v).rest < 0; }).length;
+  var noPrazo = comSla.length ? Math.round(100 * (comSla.length - venc) / comSla.length) : null;
+  var pos = 0, pre = 0; vs.forEach(function(v){ if (v.status !== "Recusada" && v.posicoes){ pos += v.posicoes.total; pre += v.posicoes.preenchidas; } });
+  var etapas = ETAPAS_FALLBACK, cont = {}; etapas.forEach(function(e){ cont[e] = 0; });
+  var totCand = 0; pipes.forEach(function(x){ x.p.forEach(function(c){ cont[c.etapa] = (cont[c.etapa] || 0) + 1; totCand++; }); });
+  var adAnd = ads.filter(function(a){ return a.status !== "Concluída"; }).length, adFim = ads.length - adAnd;
+  var itTot = 0, itOk = 0; ads.forEach(function(a){ (a.itens || []).forEach(function(i){ itTot++; if (i.concluido) itOk++; }); });
+  var k = function(t, v){ return '<div class="rs-kpi"><b>' + v + '</b>' + t + '</div>'; };
+  var max = Math.max.apply(null, etapas.map(function(e){ return cont[e] || 0; }).concat([1]));
+  var funil = etapas.map(function(e){ var n = cont[e] || 0; return '<div style="display:flex;align-items:center;gap:8px;margin:4px 0;font-size:13px"><span style="width:140px">' + esc(e) + '</span><div style="flex:1;background:#f0f0f2;border-radius:6px"><div style="width:' + Math.round(100 * n / max) + '%;min-width:' + (n ? 4 : 0) + 'px;background:var(--grena);height:16px;border-radius:6px"></div></div><b style="width:30px;text-align:right">' + n + '</b></div>'; }).join("");
+  box.innerHTML = '<div class="rs-sec" style="margin-top:0">Vagas e prazos</div><div class="rs-kpis">' + k("Vagas abertas", por("Aberta")) + k("Aguardando aprovação", por("Aguardando aprovação")) + k("Preenchidas", por("Preenchida")) + k("SLA no prazo", noPrazo === null ? "-" : noPrazo + "%") + '</div><div class="rs-kpis">' + k("SLA vencido", venc) + k("Posições preenchidas", pre + "/" + pos) + k("Candidatos no funil", totCand) + k("Triagens por IA", tris) + '</div>' +
+    '<div class="rs-sec">Funil de candidatos (vagas abertas/preenchidas)</div>' + funil +
+    '<div class="rs-sec">Admissão e onboarding</div><div class="rs-kpis">' + k("Admissões em andamento", adAnd) + k("Admissões concluídas", adFim) + k("Itens concluídos", itTot ? Math.round(100 * itOk / itTot) + "%" : "-") + k("Itens totais", itTot) + '</div>';
+}
+function montarInd(){
+  if (document.getElementById("inTab") && document.getElementById("panel-in")) return;
+  ["inTab","panel-in"].forEach(function(i){ var e = document.getElementById(i); if (e) e.remove(); });
+  var tabs = document.querySelector(".sidebar nav.tabs"), ref = document.getElementById("panel-ajuda"), prev = document.getElementById("adTab");
+  if (!tabs || !prev || !ref) return;
+  var tab = document.createElement("div"); tab.className = "tab tab-sub"; tab.id = "inTab"; tab.setAttribute("data-tab","in");
+  tab.innerHTML = '<span class="tab-icon">&#128202;</span>Indicadores R&S (piloto)';
+  tabs.insertBefore(tab, prev.nextSibling);
+  var painel = document.createElement("div"); painel.className = "panel"; painel.id = "panel-in";
+  painel.innerHTML = '<div class="kanban-header"><h2>Indicadores de Recrutamento e Seleção <span class="rs-pill rs-amber" style="font-size:11px">PILOTO</span></h2></div><div id="inLista"></div>';
+  ref.parentNode.insertBefore(painel, ref);
+  tab.addEventListener("click", function(){ document.querySelectorAll(".tab").forEach(function(x){ x.classList.remove("active"); }); document.querySelectorAll(".panel").forEach(function(x){ x.classList.remove("active"); }); tab.classList.add("active"); painel.classList.add("active"); var cb = document.getElementById("clientbarWrap"); if (cb) cb.style.display = "none"; carregarInd(); });
+}
+setInterval(montarInd, 1500);
+/* unificação: o Banco de Talentos novo (público + RecrutaHub) passa a ser o principal; o anterior fica identificado até migrar as avaliações */
+function unificarBanco(){
+  var novo = document.getElementById("rtTab");
+  if (novo && novo.textContent.indexOf("Talentos R&S") >= 0){ novo.innerHTML = '<span class="tab-icon">&#128269;</span>Banco de Talentos'; var h = document.querySelector("#panel-rt h2"); if (h) h.textContent = "Banco de Talentos"; }
+  document.querySelectorAll(".sidebar nav.tabs .tab").forEach(function(t){
+    if (t.id !== "rtTab" && /^\s*\S*\s*Banco de Talentos\s*$/.test(t.textContent) && t.textContent.indexOf("anterior") < 0) t.lastChild.textContent = " Banco de Talentos (anterior)";
+  });
+}
+setInterval(unificarBanco, 1500);
+
 window.rsDebug = { carregar: carregar, api: api };
 })();
