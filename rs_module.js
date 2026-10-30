@@ -270,7 +270,7 @@ async function detalhe(id, antigo){
   ov.querySelectorAll("a[data-of]").forEach(function(a){ a.addEventListener("click", function(ev){ ev.preventDefault(); cartaOferta(v, candPorId(a.getAttribute("data-of"))); }); });
   ov.querySelectorAll("a[data-ia]").forEach(function(a){ a.addEventListener("click", async function(ev){
     ev.preventDefault(); if (a.getAttribute("data-busy")) return; a.setAttribute("data-busy", "1"); var old = a.textContent; a.textContent = "analisando...";
-    try { await api("POST", { acao: "triar_candidato", vaga_id: id, candidato_id: a.getAttribute("data-ia") }); toast("Triagem concluída."); detalhe(id, ov); }
+    try { await api("POST", null, { acao: "triar_candidato", vaga_id: id, candidato_id: a.getAttribute("data-ia") }); toast("Triagem concluída."); detalhe(id, ov); }
     catch(e){ a.textContent = old; a.removeAttribute("data-busy"); toast("Erro: " + e.message, true); }
   }); });
   ov.querySelectorAll("a[data-p]").forEach(function(a){ a.addEventListener("click", function(e){ e.preventDefault(); perfil(a.getAttribute("data-p")); }); });
