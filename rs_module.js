@@ -406,10 +406,12 @@ async function buscarBanco(){
   var p = { r: "talentos", q: document.getElementById("rtQ").value.trim(), cargo: document.getElementById("rtCargo").value.trim(), cidade: document.getElementById("rtCidade").value.trim() };
   var f = document.getElementById("rtFonte").value; if (f) p.fonte = f;
   try { talentos = await api("GET", p); } catch(e){ box.innerHTML = '<span style="color:#b02a2a">' + esc(e.message) + '</span>'; return; }
+  try { if (typeof loadTalentAvaliacoes === "function") await loadTalentAvaliacoes(true); } catch(e){}
   if (!talentos.length) { box.innerHTML = '<p style="color:#777">Nenhum candidato encontrado.</p>'; return; }
-  box.innerHTML = '<div style="font-size:12px;color:#777;margin-bottom:6px">' + talentos.length + ' resultado(s)' + (talentos.length >= 100 ? ' (mostrando os 100 mais recentes; refine a busca)' : '') + '</div><table class="rs-tbl"><thead><tr><th>Nome</th><th>Cargo / área</th><th>Cidade</th><th>Contato</th><th>Origem</th><th>Entrada</th><th></th></tr></thead><tbody>' +
-    talentos.map(function(c, i){ return '<tr><td><b>' + esc(c.nome) + '</b>' + (c.numero ? ' <span style="color:#777">#' + esc(c.numero) + '</span>' : '') + (c.etapa ? '<div style="font-size:11px;color:#777">' + esc(c.etapa) + '</div>' : '') + '</td><td>' + esc([c.cargo, c.area].filter(Boolean).join(" / ")) + '</td><td>' + esc(c.cidade || "") + '</td><td>' + esc([c.email, c.telefone].filter(Boolean).join(" · ")) + '</td><td>' + (c.fonte === "publico" ? '<span class="rs-pill rs-green">Página pública</span>' : '<span class="rs-pill rs-blue">RecrutaHub atual</span>') + '</td><td>' + fmtDT(c.criado_em) + '</td><td style="white-space:nowrap">' + (c.fonte === "publico" ? '<button class="rs-btn" data-pf="' + i + '">Perfil</button> ' : '') + '<button class="rs-btn" data-vc="' + i + '">Vincular</button></td></tr>'; }).join("") + '</tbody></table>';
+  box.innerHTML = '<div style="font-size:12px;color:#777;margin-bottom:6px">' + talentos.length + ' resultado(s)' + (talentos.length >= 100 ? ' (mostrando os 100 mais recentes; refine a busca)' : '') + '</div><table class="rs-tbl"><thead><tr><th>Nome</th><th>Cargo / área</th><th>Cidade</th><th>Contato</th><th>Origem</th><th>Entrada</th><th>Avaliação</th><th></th></tr></thead><tbody>' +
+    talentos.map(function(c, i){ return '<tr><td><b>' + esc(c.nome) + '</b>' + (c.numero ? ' <span style="color:#777">#' + esc(c.numero) + '</span>' : '') + (c.etapa ? '<div style="font-size:11px;color:#777">' + esc(c.etapa) + '</div>' : '') + '</td><td>' + esc([c.cargo, c.area].filter(Boolean).join(" / ")) + '</td><td>' + esc(c.cidade || "") + '</td><td>' + esc([c.email, c.telefone].filter(Boolean).join(" · ")) + '</td><td>' + (c.fonte === "publico" ? '<span class="rs-pill rs-green">Página pública</span>' : '<span class="rs-pill rs-blue">RecrutaHub atual</span>') + '</td><td>' + fmtDT(c.criado_em) + '</td><td>' + avalCelula(c) + '</td><td style="white-space:nowrap">' + (c.fonte === "publico" ? '<button class="rs-btn" data-pf="' + i + '">Perfil</button> ' : '') + '<button class="rs-btn o" data-av="' + i + '">Avaliar</button> <button class="rs-btn" data-vc="' + i + '">Vincular</button></td></tr>'; }).join("") + '</tbody></table>';
   box.querySelectorAll("button[data-pf]").forEach(function(b){ b.addEventListener("click", function(){ perfil(talentos[Number(b.getAttribute("data-pf"))].id, buscarBanco); }); });
+  box.querySelectorAll("button[data-av]").forEach(function(b){ b.addEventListener("click", function(){ avaliarCand(talentos[Number(b.getAttribute("data-av"))], buscarBanco); }); });
   box.querySelectorAll("button[data-vc]").forEach(function(b){ b.addEventListener("click", function(){ vincularBanco(talentos[Number(b.getAttribute("data-vc"))]); }); });
 }
 
@@ -553,6 +555,33 @@ function unificarBanco(){
   });
 }
 setInterval(unificarBanco, 1500);
+
+/* ===== Fase 4: avaliação (aprovar/reprovar) migrada para o Banco de Talentos unificado ===== */
+function avalDe(c){ try { return (typeof TALENT_AVALIACOES !== "undefined" && TALENT_AVALIACOES[String(c.id)]) || null; } catch(e){ return null; } }
+function avalCelula(c){
+  var a = avalDe(c); if (!a || !a.decisao || a.oculto) return '<span style="color:#999">-</span>';
+  return '<span class="rs-pill ' + (a.decisao === "Aprovado" ? "rs-green" : "rs-red") + '">' + esc(a.decisao) + '</span>' + (a.coordenador ? '<div style="font-size:11px;color:#777">' + esc(a.coordenador) + '</div>' : '') + (a.decisao === "Reprovado" && a.motivoReprovacao ? '<div style="font-size:11px;color:#777">' + esc(a.motivoReprovacao) + '</div>' : '');
+}
+function avaliarCand(c, aoSalvar){
+  if (typeof graphFetch !== "function" || typeof AVALIACOES_GRAPH_BASE === "undefined") { toast("Entre com a conta Microsoft para avaliar candidatos.", true); return; }
+  var a = avalDe(c);
+  var ov = overlay('<h3>Avaliar candidato - ' + esc(c.nome) + '</h3><div style="margin:8px 0;font-size:14px"><label style="margin-right:18px"><input type="radio" name="av_d" value="Aprovado"' + (a && a.decisao === "Aprovado" ? " checked" : "") + '> Aprovado</label><label><input type="radio" name="av_d" value="Reprovado"' + (a && a.decisao === "Reprovado" ? " checked" : "") + '> Reprovado</label></div><label style="font-size:12px;font-weight:600">Motivo (obrigatório se reprovado)</label><textarea id="av_m" rows="3" class="rs-in">' + esc(a && a.motivoReprovacao || "") + '</textarea><div class="rs-act"><button class="rs-btn o" id="av_x">Cancelar</button><button class="rs-btn" id="av_ok">Salvar avaliação</button></div>');
+  ov.querySelector("#av_x").addEventListener("click", function(){ ov.remove(); });
+  ov.querySelector("#av_ok").addEventListener("click", async function(){
+    var sel = ov.querySelector('input[name="av_d"]:checked'); if (!sel) { toast("Selecione Aprovado ou Reprovado.", true); return; }
+    var decisao = sel.value, motivo = ov.querySelector("#av_m").value.trim();
+    if (decisao === "Reprovado" && !motivo) { toast("Informe o motivo da reprovação.", true); return; }
+    try {
+      var quem = (typeof CURRENT_USER_NAME !== "undefined" && CURRENT_USER_NAME) || (typeof CURRENT_USER_EMAIL !== "undefined" && CURRENT_USER_EMAIL) || usuario();
+      var fields = { Title: c.nome, CandidatoId: String(c.id), Decisao: decisao, MotivoReprovacao: decisao === "Reprovado" ? motivo : "", Coordenador: quem, Data: new Date().toISOString() };
+      if (a && a.itemId) { await graphFetch(AVALIACOES_GRAPH_BASE + "/items/" + a.itemId + "/fields", { method: "PATCH", body: JSON.stringify(fields) }); a.decisao = decisao; a.motivoReprovacao = fields.MotivoReprovacao; a.coordenador = quem; a.data = fields.Data; a.oculto = false; }
+      else { var cr = await graphFetch(AVALIACOES_GRAPH_BASE + "/items", { method: "POST", body: JSON.stringify({ fields: (typeof cleanGraphFields === "function" ? cleanGraphFields(fields) : fields) }) }); TALENT_AVALIACOES[String(c.id)] = { itemId: cr.id, decisao: decisao, motivoReprovacao: fields.MotivoReprovacao, coordenador: quem, data: fields.Data, oculto: false }; }
+      toast("Avaliação salva.");
+      try { if (typeof notificarRSDecisaoCandidato === "function") await notificarRSDecisaoCandidato({ nome: c.nome, area: c.area || c.cargo || "" }, decisao, motivo); } catch(e){ console.warn("notificar R&S", e); }
+      ov.remove(); if (aoSalvar) aoSalvar();
+    } catch(e){ toast("Erro ao salvar avaliação: " + e.message, true); }
+  });
+}
 
 window.rsDebug = { carregar: carregar, api: api };
 })();
