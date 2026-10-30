@@ -509,7 +509,7 @@ function montarAdm(){
 setInterval(montarAdm, 1500);
 
 /* ===== Fase 4: indicadores de R&S e unificação do Banco de Talentos ===== */
-async function carregarInd(){
+async function carregarIndOld(){
   var box = document.getElementById("inLista"); if (!box) return;
   box.innerHTML = '<p style="color:#777">Calculando...</p>';
   var vs, ads, pipes = [], tris = 0;
@@ -582,6 +582,115 @@ function avaliarCand(c, aoSalvar){
       ov.remove(); if (aoSalvar) aoSalvar();
     } catch(e){ toast("Erro ao salvar avaliação: " + e.message, true); }
   });
+}
+
+/* ===== Gráficos profissionais (SVG) para os Indicadores de R&S ===== */
+var CH = { grena: "#6B1426", teal: "#2D5F66", verde: "#2E8B57", ambar: "#E8A33D", verm: "#C8402F", cinza: "#9AA3A8", azul: "#3B6FB6" };
+function chFmt(n){ return Number(n).toLocaleString("pt-BR"); }
+function chCard(id, titulo, dica, corpo, legenda){
+  return '<div class="ch-card" id="' + id + '"><div class="ch-head"><span class="ch-tit">' + esc(titulo) + '</span><span class="ch-info" title="' + esc(dica) + '">i</span><button type="button" class="ch-copy" data-ch="' + id + '">Copiar</button></div><div class="ch-body">' + corpo + '</div>' + (legenda ? '<div class="ch-leg">' + legenda + '</div>' : '') + '</div>';
+}
+function chLegenda(itens){ return itens.map(function(i){ return '<span class="ch-li"><i style="background:' + i.cor + '"></i>' + esc(i.nome) + ' (' + chFmt(i.v) + (i.pct != null ? ', ' + i.pct + '%' : '') + ')</span>'; }).join(""); }
+function chDonut(itens, centroNum, centroTxt){
+  var tot = itens.reduce(function(s, i){ return s + i.v; }, 0), R = 100, r = 66, cx = 120, cy = 120, a0 = -Math.PI / 2, g = '';
+  if (!tot) g += '<circle cx="' + cx + '" cy="' + cy + '" r="' + ((R + r) / 2) + '" fill="none" stroke="#eceef1" stroke-width="' + (R - r) + '"/>';
+  itens.filter(function(i){ return i.v > 0; }).forEach(function(i){
+    var f = i.v / tot, a1 = a0 + f * 2 * Math.PI - (itens.length > 1 && f < 1 ? 0.012 : 0), lg = (a1 - a0) > Math.PI ? 1 : 0;
+    if (f >= 0.9999) { g += '<circle cx="' + cx + '" cy="' + cy + '" r="' + ((R + r) / 2) + '" fill="none" stroke="' + i.cor + '" stroke-width="' + (R - r) + '"/>'; }
+    else { var p = function(rad, a){ return (cx + rad * Math.cos(a)).toFixed(2) + ' ' + (cy + rad * Math.sin(a)).toFixed(2); };
+      g += '<path d="M ' + p(R, a0) + ' A ' + R + ' ' + R + ' 0 ' + lg + ' 1 ' + p(R, a1) + ' L ' + p(r, a1) + ' A ' + r + ' ' + r + ' 0 ' + lg + ' 0 ' + p(r, a0) + ' Z" fill="' + i.cor + '"/>'; }
+    if (f >= 0.06) { var am = a0 + f * Math.PI, rm = (R + r) / 2; g += '<text x="' + (cx + rm * Math.cos(am)).toFixed(1) + '" y="' + (cy + rm * Math.sin(am) + 4).toFixed(1) + '" text-anchor="middle" font-size="12" font-weight="700" fill="#fff">' + Math.round(f * 100) + '%</text>'; }
+    a0 += f * 2 * Math.PI;
+  });
+  g += '<text x="' + cx + '" y="' + (cy + 4) + '" text-anchor="middle" font-size="34" font-weight="800" fill="#2a2a2a">' + esc(centroNum) + '</text><text x="' + cx + '" y="' + (cy + 24) + '" text-anchor="middle" font-size="12" fill="#666">' + esc(centroTxt) + '</text>';
+  return '<svg viewBox="0 0 240 240" class="ch-svg" style="max-height:210px">' + g + '</svg>';
+}
+function chBarras(itens){
+  var W = 420, H = 230, ml = 34, mb = 40, mt = 22, max = Math.max.apply(null, itens.map(function(i){ return i.v; }).concat([1]));
+  var step = Math.pow(10, Math.floor(Math.log10(max))), top = Math.ceil(max / step) * step; if (top / step < 3) { step = step / 2; top = Math.ceil(max / step) * step; }
+  var g = '', ph = H - mt - mb, bw = Math.min(70, (W - ml - 10) / itens.length * 0.62), gap = (W - ml - 10) / itens.length;
+  for (var y = 0; y <= top + 0.001; y += step){ var yy = mt + ph - (y / top) * ph; g += '<line x1="' + ml + '" x2="' + (W - 6) + '" y1="' + yy + '" y2="' + yy + '" stroke="#e6e8eb"/><text x="' + (ml - 6) + '" y="' + (yy + 4) + '" text-anchor="end" font-size="11" fill="#7a7f85">' + chFmt(y) + '</text>'; }
+  itens.forEach(function(i, k){
+    var h = Math.max(i.v ? 3 : 0, (i.v / top) * ph), x = ml + gap * k + (gap - bw) / 2, y0 = mt + ph - h;
+    g += '<rect x="' + x.toFixed(1) + '" y="' + y0.toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + h.toFixed(1) + '" rx="5" fill="' + i.cor + '"/><text x="' + (x + bw / 2).toFixed(1) + '" y="' + (y0 - 6).toFixed(1) + '" text-anchor="middle" font-size="14" font-weight="800" fill="#222">' + chFmt(i.v) + '</text><text x="' + (x + bw / 2).toFixed(1) + '" y="' + (H - 16) + '" text-anchor="middle" font-size="11.5" fill="#555">' + esc(i.nome) + '</text>';
+  });
+  return '<svg viewBox="0 0 ' + W + ' ' + H + '" class="ch-svg">' + g + '</svg>';
+}
+function chHBarras(itens, suf){
+  var max = Math.max.apply(null, itens.map(function(i){ return i.v; }).concat([1])), ml = 130, W = 520, rh = 28, H = itens.length * rh + 8, g = '';
+  itens.forEach(function(i, k){
+    var y = 4 + k * rh, w = Math.max(i.v ? 6 : 0, (i.v / max) * (W - ml - 60));
+    g += '<text x="' + (ml - 8) + '" y="' + (y + 16) + '" text-anchor="end" font-size="12" fill="#444">' + esc(i.nome) + '</text><rect x="' + ml + '" y="' + (y + 3) + '" width="' + (W - ml - 50) + '" height="18" rx="4" fill="#f1f2f4"/><rect x="' + ml + '" y="' + (y + 3) + '" width="' + w.toFixed(1) + '" height="18" rx="4" fill="' + (i.cor || CH.verde) + '"/><text x="' + (ml + Math.max(w, 30) - 6).toFixed(1) + '" y="' + (y + 16) + '" text-anchor="end" font-size="12" font-weight="700" fill="#fff">' + chFmt(i.v) + (suf || '') + '</text>';
+  });
+  return '<svg viewBox="0 0 ' + W + ' ' + H + '" class="ch-svg">' + g + '</svg>';
+}
+function chLinha(pts, suf){
+  var W = 520, H = 250, ml = 40, mr = 20, mt = 28, mb = 38, vs = pts.map(function(p){ return p.v; }), mx = Math.max.apply(null, vs.concat([1])), top = Math.ceil(mx * 1.15 / 1) || 1, g = '', pw = W - ml - mr, ph = H - mt - mb;
+  var nt = 4; for (var t = 0; t <= nt; t++){ var val = top * t / nt, yy = mt + ph - (val / top) * ph; g += '<line x1="' + ml + '" x2="' + (W - mr) + '" y1="' + yy + '" y2="' + yy + '" stroke="#e6e8eb"/><text x="' + (ml - 6) + '" y="' + (yy + 4) + '" text-anchor="end" font-size="11" fill="#7a7f85">' + (Math.round(val * 10) / 10) + (suf || '') + '</text>'; }
+  var X = function(k){ return ml + (pts.length > 1 ? pw * k / (pts.length - 1) : pw / 2); }, Y = function(v){ return mt + ph - (v / top) * ph; };
+  var d = pts.map(function(p, k){ return (k ? 'L' : 'M') + X(k).toFixed(1) + ' ' + Y(p.v).toFixed(1); }).join(' ');
+  g += '<path d="' + d + ' L' + X(pts.length - 1).toFixed(1) + ' ' + (mt + ph) + ' L' + X(0).toFixed(1) + ' ' + (mt + ph) + ' Z" fill="' + CH.teal + '" fill-opacity="0.10"/><path d="' + d + '" fill="none" stroke="' + CH.teal + '" stroke-width="2.6" stroke-linejoin="round"/>';
+  pts.forEach(function(p, k){ g += '<circle cx="' + X(k).toFixed(1) + '" cy="' + Y(p.v).toFixed(1) + '" r="4.5" fill="#fff" stroke="' + CH.teal + '" stroke-width="2.4"/><text x="' + X(k).toFixed(1) + '" y="' + (Y(p.v) - 10).toFixed(1) + '" text-anchor="middle" font-size="11.5" font-weight="700" fill="#222">' + p.v + (suf || '') + '</text><text x="' + X(k).toFixed(1) + '" y="' + (H - 14) + '" text-anchor="middle" font-size="11" fill="#666">' + esc(p.nome) + '</text>'; });
+  return '<svg viewBox="0 0 ' + W + ' ' + H + '" class="ch-svg">' + g + '</svg>';
+}
+function chCss(){
+  if (document.getElementById("chCss")) return;
+  var s = document.createElement("style"); s.id = "chCss";
+  s.textContent = ".ch-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin:14px 0}.ch-g2{grid-template-columns:repeat(2,minmax(0,1fr))}.ch-card{background:#fff;border:1px solid var(--border);border-radius:14px;padding:16px 18px;box-shadow:0 1px 3px rgba(0,0,0,.04);display:flex;flex-direction:column}.ch-head{display:flex;align-items:center;gap:8px;margin-bottom:8px}.ch-tit{font-weight:700;color:var(--grena);font-size:15px}.ch-info{width:16px;height:16px;border:1px solid #aab;border-radius:50%;font-size:10px;display:inline-flex;align-items:center;justify-content:center;color:#889;cursor:help;font-style:italic}.ch-copy{margin-left:auto;border:1px solid var(--border);background:#fff;border-radius:7px;padding:3px 10px;font-size:11px;color:#667;cursor:pointer}.ch-copy:hover{background:#f6f6f8}.ch-body{flex:1;display:flex;align-items:center;justify-content:center}.ch-svg{width:100%;height:auto;display:block}.ch-leg{border-top:1px solid #eceef1;margin-top:10px;padding-top:10px;display:flex;flex-wrap:wrap;gap:6px 16px;font-size:12.5px;color:#444}.ch-li i{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:6px;vertical-align:-1px}@media(max-width:1000px){.ch-grid,.ch-g2{grid-template-columns:1fr}}";
+  document.head.appendChild(s);
+}
+function chCopiar(id, btn){
+  var card = document.getElementById(id), svg = card && card.querySelector("svg"); if (!svg) return;
+  var tit = card.querySelector(".ch-tit").textContent, old = btn.textContent;
+  var vb = svg.viewBox.baseVal, esc2 = 2, w = vb.width * esc2, h = vb.height * esc2;
+  var xml = new XMLSerializer().serializeToString(svg).replace("<svg", '<svg xmlns="http://www.w3.org/2000/svg" width="' + w + '" height="' + h + '" font-family="Arial,sans-serif"');
+  var img = new Image();
+  img.onload = function(){
+    var c = document.createElement("canvas"); c.width = w; c.height = h + 60; var x = c.getContext("2d"); x.fillStyle = "#fff"; x.fillRect(0, 0, c.width, c.height); x.fillStyle = CH.grena; x.font = "bold 22px Arial"; x.fillText(tit, 14, 32); x.drawImage(img, 0, 50, w, h);
+    c.toBlob(function(b){ try { navigator.clipboard.write([new ClipboardItem({ "image/png": b })]).then(function(){ btn.textContent = "Copiado"; setTimeout(function(){ btn.textContent = old; }, 1500); }, function(){ toast("Não foi possível copiar a imagem.", true); }); } catch(e){ toast("Seu navegador não permite copiar imagem.", true); } });
+  };
+  img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(xml);
+}
+async function carregarInd(){
+  var box = document.getElementById("inLista"); if (!box) return;
+  chCss(); box.innerHTML = '<p style="color:#777">Calculando...</p>';
+  var vs, ads, pipes = [], tris = 0;
+  try {
+    vs = await api("GET", { r: "vagas" }); ads = await api("GET", { r: "admissoes" });
+    var ativas = vs.filter(function(v){ return v.status === "Aberta" || v.status === "Preenchida"; });
+    for (var i = 0; i < ativas.length; i++){ try { var d = await api("GET", { r: "vaga", id: ativas[i].id }); pipes.push({ v: ativas[i], p: d.pipeline || [] }); var t = await api("GET", { r: "triagens", vaga_id: ativas[i].id }); tris += (t || []).length; } catch(e){} }
+  } catch(e){ box.innerHTML = '<span style="color:#b02a2a">' + esc(e.message) + '</span>'; return; }
+  var pct = function(v, t){ return t ? Math.round(100 * v / t) : 0; };
+  var por = function(st){ return vs.filter(function(v){ return v.status === st; }).length; };
+  var stat = [{ nome: "Abertas", v: por("Aberta"), cor: CH.verde }, { nome: "Aguardando aprovação", v: por("Aguardando aprovação"), cor: CH.ambar }, { nome: "Preenchidas", v: por("Preenchida"), cor: CH.teal }, { nome: "Recusadas/canceladas", v: vs.length - por("Aberta") - por("Aguardando aprovação") - por("Preenchida"), cor: CH.verm }];
+  var totV = vs.length; stat.forEach(function(s){ s.pct = pct(s.v, totV); });
+  var comSla = vs.filter(function(v){ return sla(v); }), venc = comSla.filter(function(v){ return sla(v).rest < 0; }).length, ok = comSla.length - venc;
+  var slaI = [{ nome: "No prazo", v: ok, cor: CH.verde, pct: pct(ok, comSla.length) }, { nome: "Vencido", v: venc, cor: CH.verm, pct: pct(venc, comSla.length) }];
+  var pos = 0, pre = 0; vs.forEach(function(v){ if (v.status !== "Recusada" && v.posicoes){ pos += v.posicoes.total; pre += v.posicoes.preenchidas; } });
+  var posB = [{ nome: "Posições", v: pos, cor: CH.teal }, { nome: "Preenchidas", v: pre, cor: CH.verde }, { nome: "Em seleção", v: pos - pre, cor: CH.ambar }];
+  var etapas = ETAPAS_FALLBACK, cont = {}; etapas.forEach(function(e){ cont[e] = 0; }); var totC = 0;
+  pipes.forEach(function(x){ x.p.forEach(function(c){ cont[c.etapa] = (cont[c.etapa] || 0) + 1; totC++; }); });
+  var cores = { "Inscrito": CH.cinza, "Triagem": CH.azul, "Entrevista RH": CH.azul, "Entrevista Gestor": CH.teal, "Aprovado": CH.verde, "Carta Oferta": CH.verde, "Contratado": CH.grena, "Reprovado": CH.verm, "Banco de Talentos": CH.ambar };
+  var funil = etapas.map(function(e){ return { nome: e, v: cont[e] || 0, cor: cores[e] || CH.verde }; });
+  function chSemana(d){ var x = new Date(d); x.setHours(0, 0, 0, 0); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return x; }
+  var sem = []; var hoje = chSemana(new Date()); for (var k = 7; k >= 0; k--){ var ini = new Date(hoje); ini.setDate(ini.getDate() - 7 * k); var fim = new Date(ini); fim.setDate(fim.getDate() + 7); sem.push({ nome: ("0" + ini.getDate()).slice(-2) + "/" + ("0" + (ini.getMonth() + 1)).slice(-2), v: vs.filter(function(v){ var c = new Date(v.criado_em); return c >= ini && c < fim; }).length }); }
+  var itTot = 0, itOk = 0; var gr = { documentos: [0, 0], exame_epi: [0, 0], onboarding: [0, 0] };
+  ads.forEach(function(a){ (a.itens || []).forEach(function(i){ itTot++; if (i.concluido) itOk++; if (gr[i.grupo]) { gr[i.grupo][1]++; if (i.concluido) gr[i.grupo][0]++; } }); });
+  var adI = [{ nome: "Concluídos", v: itOk, cor: CH.verde, pct: pct(itOk, itTot) }, { nome: "Pendentes", v: itTot - itOk, cor: CH.ambar, pct: pct(itTot - itOk, itTot) }];
+  var adG = [{ nome: "Documentos", v: pct(gr.documentos[0], gr.documentos[1]), cor: CH.verde }, { nome: "Exame / EPIs", v: pct(gr.exame_epi[0], gr.exame_epi[1]), cor: CH.verde }, { nome: "Onboarding", v: pct(gr.onboarding[0], gr.onboarding[1]), cor: CH.verde }];
+  var slaPct = comSla.length ? pct(ok, comSla.length) : null;
+  box.innerHTML = '<div class="ch-grid">' +
+    chCard("ch1", "Vagas por status", "Distribuição de todas as vagas pelo status atual.", chDonut(stat, String(totV), "vagas"), chLegenda(stat)) +
+    chCard("ch2", "Posições abertas x preenchidas", "Total de posições das vagas, quantas já foram preenchidas e quantas seguem em seleção.", chBarras(posB), chLegenda([{ nome: "Preenchidas", v: pre, cor: CH.verde, pct: pct(pre, pos) }, { nome: "Em seleção", v: pos - pre, cor: CH.ambar, pct: pct(pos - pre, pos) }])) +
+    chCard("ch3", "SLA das vagas", "Vagas em andamento dentro e fora do prazo (dias úteis, conforme o nível do cargo).", chDonut(slaI, slaPct === null ? "-" : slaPct + "%", "no prazo"), chLegenda(slaI)) +
+    '</div><div class="ch-grid ch-g2">' +
+    chCard("ch4", "Funil de candidatos", "Candidatos vinculados às vagas abertas ou preenchidas, por etapa do processo (" + totC + " no total).", chHBarras(funil), "") +
+    chCard("ch5", "Vagas criadas por semana - últimas 8 semanas", "Quantidade de vagas criadas em cada semana.", chLinha(sem), '<span class="ch-li"><i style="background:' + CH.teal + '"></i>Vagas criadas (' + sem.reduce(function(s, p){ return s + p.v; }, 0) + ' no período)</span>') +
+    '</div><div class="ch-grid ch-g2">' +
+    chCard("ch6", "Admissão e onboarding", "Itens dos checklists de admissão concluídos e pendentes (" + ads.length + " admissões).", chDonut(adI, itTot ? pct(itOk, itTot) + "%" : "-", "concluído"), chLegenda(adI)) +
+    chCard("ch7", "Andamento por grupo de admissão", "Percentual de itens concluídos em cada grupo do checklist.", chHBarras(adG, "%"), '<span class="ch-li"><i style="background:' + CH.verde + '"></i>Triagens por IA realizadas: ' + tris + '</span>') +
+    '</div>';
+  box.querySelectorAll("button[data-ch]").forEach(function(b){ b.addEventListener("click", function(){ chCopiar(b.getAttribute("data-ch"), b); }); });
 }
 
 window.rsDebug = { carregar: carregar, api: api };
