@@ -280,7 +280,7 @@ async function detalhe(id, antigo){
     catch(e){ toast("Erro: " + e.message, true); }
   }); });
   ov.querySelectorAll("select[data-c]").forEach(function(sel){ sel.addEventListener("change", async function(){
-    try { await api("POST", null, { acao: "mover_candidato", vaga_id: id, candidato_id: sel.getAttribute("data-c"), para_etapa: sel.value }); detalhe(id, ov); }
+    try { await api("POST", null, { acao: "mover_candidato", vaga_id: id, candidato_id: sel.getAttribute("data-c"), para_etapa: sel.value }); if (sel.value === "Contratado") await aoContratar(v, candPorId(sel.getAttribute("data-c"))); detalhe(id, ov); }
     catch(e){ toast("Erro: " + e.message, true); }
   }); });
   var bb = ov.querySelector("#rs_bbtn");
@@ -430,6 +430,80 @@ function montarBanco(){
   ["rtQ","rtCargo","rtCidade"].forEach(function(i){ document.getElementById(i).addEventListener("keydown", function(e){ if (e.key === "Enter") buscarBanco(); }); });
 }
 setInterval(montarBanco, 1500);
+
+/* ===== Fase 4: admissão e onboarding ===== */
+var RS_NOTIFICA_DP_REAL = false; /* homologação: aviso vai só para quem executou a ação */
+var GRUPOS_ADM = [["documentos","Documentos admissionais"],["exame_epi","Exame admissional e EPIs"],["onboarding","Onboarding (1º dia, 30/60/90 dias)"]];
+function dpEmail(){ try { return AREA_RESPONSAVEL_EMAIL["Departamento Pessoal"] || ""; } catch(e){ return ""; } }
+async function avisarDP(adm, v){
+  try {
+    if (typeof graphFetch !== "function") return false;
+    var dest = RS_NOTIFICA_DP_REAL ? dpEmail() : usuario();
+    if (!dest) return false;
+    var html = "<p>Olá,</p><p>Um candidato foi marcado como <b>Contratado</b> no módulo de Recrutamento e Seleção" + (RS_NOTIFICA_DP_REAL ? "" : " (<b>HOMOLOGAÇÃO</b> - aviso enviado apenas a você; em produção seguirá ao DP)") + ":</p><ul><li><b>Candidato:</b> " + esc(adm.nome) + "</li><li><b>Cargo:</b> " + esc(adm.cargo) + "</li><li><b>Vaga:</b> " + esc(v.codigo) + (v.cliente ? " - " + esc(v.cliente) : "") + "</li></ul><p>A admissão foi aberta no painel com o checklist de documentos, exame/EPIs e onboarding.</p>";
+    await graphFetch("https://graph.microsoft.com/v1.0/me/sendMail", { method: "POST", body: JSON.stringify({ message: { subject: "[Painel ElevaLife] Admissão aberta: " + adm.nome, body: { contentType: "HTML", content: html }, toRecipients: [{ emailAddress: { address: dest } }] }, saveToSentItems: true }) });
+    return true;
+  } catch(e){ console.warn("aviso DP", e); return false; }
+}
+async function aoContratar(v, c){
+  try {
+    var r = await api("POST", null, { acao: "iniciar_admissao", vaga_id: v.id, candidato_id: c.candidato_id, fonte: c.fonte, nome: c.nome, cargo: v.cargo });
+    if (r && r.ja_existia) { toast("Admissão já estava aberta."); return; }
+    var ok = await avisarDP(r, v);
+    toast("Admissão aberta. " + (ok ? "DP avisado por e-mail." : "Não foi possível enviar o e-mail ao DP (entre com a conta Microsoft)."));
+  } catch(e){ toast("Erro ao abrir admissão: " + e.message, true); }
+}
+function dataMais(iso, dias){ if (!iso || dias == null) return null; var p = iso.split("-"); var d = new Date(+p[0], +p[1] - 1, +p[2]); d.setDate(d.getDate() + dias); return d; }
+function progresso(itens, g){ var l = itens.filter(function(i){ return !g || i.grupo === g; }); var f = l.filter(function(i){ return i.concluido; }).length; return { f: f, t: l.length }; }
+var adms = [];
+async function carregarAdm(){
+  var box = document.getElementById("adLista"); if (!box) return;
+  box.innerHTML = '<p style="color:#777">Carregando...</p>';
+  try { adms = await api("GET", { r: "admissoes" }); } catch(e){ box.innerHTML = '<span style="color:#b02a2a">' + esc(e.message) + '</span>'; return; }
+  if (!adms.length) { box.innerHTML = '<p style="color:#777">Nenhuma admissão aberta. Elas são abertas automaticamente quando um candidato é movido para "Contratado" na vaga.</p>'; return; }
+  box.innerHTML = '<table class="rs-tbl"><thead><tr><th>Candidato</th><th>Cargo</th><th>Início</th><th>Documentos</th><th>Exame / EPIs</th><th>Onboarding</th><th>Status</th><th></th></tr></thead><tbody>' + adms.map(function(a){
+    var p = function(g){ var x = progresso(a.itens || [], g); return '<span class="rs-pill ' + (x.t && x.f === x.t ? "rs-green" : "rs-amber") + '">' + x.f + '/' + x.t + '</span>'; };
+    return '<tr><td><b>' + esc(a.nome) + '</b></td><td>' + esc(a.cargo) + '</td><td>' + (a.data_inicio ? fmtData(dataMais(a.data_inicio, 0)) : '<span style="color:#b45309">definir</span>') + '</td><td>' + p("documentos") + '</td><td>' + p("exame_epi") + '</td><td>' + p("onboarding") + '</td><td>' + esc(a.status) + '</td><td><button class="rs-btn o" data-ad="' + esc(a.id) + '">Abrir</button></td></tr>';
+  }).join("") + '</tbody></table>';
+  box.querySelectorAll("button[data-ad]").forEach(function(b){ b.addEventListener("click", function(){ detalheAdm(b.getAttribute("data-ad")); }); });
+}
+async function detalheAdm(id, antigo){
+  var a;
+  try { a = await api("GET", { r: "admissao", id: id }); } catch(e){ toast("Erro: " + e.message, true); return; }
+  if (antigo) antigo.remove();
+  var itens = (a.itens || []).sort(function(x, y){ return x.ordem - y.ordem; });
+  var hoje = new Date(); hoje.setHours(0, 0, 0, 0);
+  var h = '<h3>Admissão - ' + esc(a.nome) + ' <span class="rs-pill rs-blue">' + esc(a.status) + '</span></h3><div style="font-size:13px;margin-bottom:8px">' + esc(a.cargo) + ' &nbsp; Data de início: <input type="date" id="ad_ini" value="' + esc(a.data_inicio || "") + '" style="padding:5px;border:1px solid var(--border);border-radius:6px"> <span style="color:#777">Os prazos dos itens são calculados a partir desta data.</span></div>';
+  GRUPOS_ADM.forEach(function(g){
+    var p = progresso(itens, g[0]);
+    h += '<div class="rs-sec">' + g[1] + ' (' + p.f + '/' + p.t + ')</div>';
+    itens.filter(function(i){ return i.grupo === g[0]; }).forEach(function(i){
+      var pz = dataMais(a.data_inicio, i.prazo_dias), atr = pz && !i.concluido && pz < hoje;
+      h += '<div class="rs-apr"><label style="flex:1;display:flex;gap:8px;align-items:center;cursor:pointer"><input type="checkbox" data-it="' + esc(i.id) + '"' + (i.concluido ? " checked" : "") + '> <span' + (i.concluido ? ' style="text-decoration:line-through;color:#777"' : "") + '>' + esc(i.titulo) + '</span></label>' + (pz ? '<span class="rs-pill ' + (i.concluido ? "rs-green" : (atr ? "rs-red" : "rs-gray")) + '">' + (i.concluido ? "feito" : (atr ? "atrasado " : "até ")) + (i.concluido ? "" : fmtData(pz)) + '</span>' : '') + (i.concluido_por ? '<span style="font-size:11px;color:#777">' + esc(i.concluido_por) + '</span>' : '') + '</div>';
+    });
+  });
+  var tot = progresso(itens);
+  h += '<div class="rs-act"><span style="margin-right:auto;font-size:13px">Progresso geral: <b>' + tot.f + '/' + tot.t + '</b></span>' + (a.status !== "Concluída" ? '<button class="rs-btn" id="ad_fin">Concluir admissão</button>' : '') + '<button class="rs-btn o" id="ad_x">Fechar</button></div>';
+  var ov = overlay(h);
+  ov.querySelector("#ad_x").addEventListener("click", function(){ ov.remove(); carregarAdm(); });
+  ov.querySelector("#ad_ini").addEventListener("change", async function(e){ try { await api("POST", null, { acao: "atualizar_admissao", id: id, data_inicio: e.target.value }); detalheAdm(id, ov); } catch(er){ toast("Erro: " + er.message, true); } });
+  var fin = ov.querySelector("#ad_fin"); if (fin) fin.addEventListener("click", async function(){ try { await api("POST", null, { acao: "atualizar_admissao", id: id, status: "Concluída" }); detalheAdm(id, ov); } catch(er){ toast("Erro: " + er.message, true); } });
+  ov.querySelectorAll("input[data-it]").forEach(function(cb){ cb.addEventListener("change", async function(){ try { await api("POST", null, { acao: "atualizar_item", id: cb.getAttribute("data-it"), concluido: cb.checked }); detalheAdm(id, ov); } catch(er){ toast("Erro: " + er.message, true); cb.checked = !cb.checked; } }); });
+}
+function montarAdm(){
+  if (document.getElementById("adTab") && document.getElementById("panel-ad")) return;
+  ["adTab","panel-ad"].forEach(function(i){ var e = document.getElementById(i); if (e) e.remove(); });
+  var tabs = document.querySelector(".sidebar nav.tabs"), ref = document.getElementById("panel-ajuda"), prev = document.getElementById("rtTab") || document.getElementById("rsTab");
+  if (!tabs || !prev || !ref || prev.style.display === "none") return;
+  var tab = document.createElement("div"); tab.className = "tab tab-sub"; tab.id = "adTab"; tab.setAttribute("data-tab","ad");
+  tab.innerHTML = '<span class="tab-icon">&#128221;</span>Admissões (piloto)';
+  tabs.insertBefore(tab, prev.nextSibling);
+  var painel = document.createElement("div"); painel.className = "panel"; painel.id = "panel-ad";
+  painel.innerHTML = '<div class="kanban-header"><h2>Admissões e onboarding <span class="rs-pill rs-amber" style="font-size:11px">PILOTO</span></h2></div><div style="padding:0 4px 10px;font-size:13px;color:#555">Candidatos contratados: documentos admissionais, exame e EPIs, onboarding de 1º dia, 30, 60 e 90 dias.</div><div id="adLista"></div>';
+  ref.parentNode.insertBefore(painel, ref);
+  tab.addEventListener("click", function(){ document.querySelectorAll(".tab").forEach(function(x){ x.classList.remove("active"); }); document.querySelectorAll(".panel").forEach(function(x){ x.classList.remove("active"); }); tab.classList.add("active"); painel.classList.add("active"); var cb = document.getElementById("clientbarWrap"); if (cb) cb.style.display = "none"; carregarAdm(); });
+}
+setInterval(montarAdm, 1500);
 
 window.rsDebug = { carregar: carregar, api: api };
 })();
