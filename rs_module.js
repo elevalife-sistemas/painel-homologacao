@@ -436,7 +436,8 @@ setInterval(montarBanco, 1500);
 /* ===== Fase 4: admissão e onboarding ===== */
 var RS_NOTIFICA_DP_REAL = false; /* homologação: aviso vai só para quem executou a ação */
 var GRUPOS_ADM = [["documentos","Documentos admissionais"],["exame_epi","Exame admissional e EPIs"],["onboarding","Onboarding (1º dia, 30/60/90 dias)"]];
-function dpEmail(){ try { return AREA_RESPONSAVEL_EMAIL["Departamento Pessoal"] || ""; } catch(e){ return ""; } }
+var DP_EMAIL_REAL = "gabrielepaes@elevalife.com.br"; /* e-mail real do DP; usado quando RS_NOTIFICA_DP_REAL = true (produção) */
+function dpEmail(){ return DP_EMAIL_REAL; }
 async function avisarDP(adm, v){
   try {
     if (typeof graphFetch !== "function") return false;
