@@ -693,5 +693,81 @@ async function carregarInd(){
   box.querySelectorAll("button[data-ch]").forEach(function(b){ b.addEventListener("click", function(){ chCopiar(b.getAttribute("data-ch"), b); }); });
 }
 
+
+  /* ===== Padrão de gráficos nas telas Visão Geral e Dashboard ===== */
+  function gcHook(box){ box.querySelectorAll("button[data-ch]").forEach(function(b){ if (b.__h) return; b.__h = 1; b.addEventListener("click", function(){ chCopiar(b.getAttribute("data-ch"), b); }); }); }
+  function gcCorStatus(n){ n = String(n || "").toLowerCase(); if (/conclu/.test(n)) return CH.verde; if (/atras/.test(n)) return CH.verm; if (/andamento|triagem|psel/.test(n)) return CH.azul; if (/fazer|regist|aberta/.test(n)) return CH.ambar; return CH.cinza; }
+  function gcCurto(s, n){ s = String(s || ""); return s.length > n ? s.slice(0, n - 1) + "…" : s; }
+  function gcPct(v, t){ return t ? Math.round(100 * v / t) : 0; }
+  function gcContar(arr, fn){ var m = {}; arr.forEach(function(x){ var k = fn(x); m[k] = (m[k] || 0) + 1; }); return m; }
+  function gcStatusItens(items){
+    var ord = ["Concluido", "Em andamento", "Atrasado", "A fazer", "A definir"], nom = { "Concluido": "Concluídas", "Em andamento": "Em andamento", "Atrasado": "Atrasadas", "A fazer": "A fazer", "A definir": "A definir" };
+    var m = gcContar(items, function(it){ return it.status; }), tot = items.length;
+    return ord.map(function(s){ return { nome: nom[s], v: m[s] || 0, cor: gcCorStatus(s), pct: gcPct(m[s] || 0, tot) }; });
+  }
+  function gcAreasQtd(items){
+    var m = gcContar(items, function(it){ return it.areaResp || "Sem área"; });
+    return Object.keys(m).map(function(k){ return { nome: gcCurto(k, 20), v: m[k], cor: CH.teal }; }).sort(function(a, b){ return b.v - a.v; }).slice(0, 8);
+  }
+  function gcAtrasoAreas(items){
+    var st = computeDelayStats(items);
+    return (st.areaStats || []).filter(function(a){ return a.avgDelay > 0; }).slice(0, 8).map(function(a){ return { nome: gcCurto(a.area, 20), v: Math.round(a.avgDelay * 10) / 10, cor: CH.verm }; });
+  }
+  function gcHost(id, antes){
+    var h = document.getElementById(id); if (h) return h;
+    h = document.createElement("div"); h.id = id; antes.parentNode.insertBefore(h, antes); return h;
+  }
+  function gcGeral(){
+    var pg = document.getElementById("panel-geral"), cv = document.getElementById("areaChart"); if (!pg || !cv) return;
+    var items; try { items = itemsForClients(selectedClients); } catch (e) { return; }
+    chCss();
+    var oldChart = cv.closest(".chart-card"), rk = document.getElementById("rankList"), oldRank = rk && rk.closest(".chart-card"), garg = document.getElementById("gargalosCard");
+    [oldChart, oldRank, garg].forEach(function(e){ if (e) e.style.display = "none"; });
+    var host = gcHost("gcGeral", oldChart);
+    var st = gcStatusItens(items), tot = items.length, ds = computeDelayStats(items), ok = ds.onTimeCount || 0, cons = ds.consideredCount || 0;
+    var prazo = [{ nome: "No prazo", v: ok, cor: CH.verde, pct: gcPct(ok, cons) }, { nome: "Com atraso", v: cons - ok, cor: CH.verm, pct: gcPct(cons - ok, cons) }];
+    var garRows = []; try { garRows = computeGargalos().filter(function(r){ return r.media > 0; }).slice(0, 8).map(function(r){ return { nome: gcCurto(r.num + ". " + r.title, 20), v: Math.round(r.media * 10) / 10, cor: CH.ambar }; }); } catch (e) {}
+    var atr = gcAtrasoAreas(items);
+    host.innerHTML = '<div class="ch-grid">' +
+      chCard("gc1", "Etapas por status", "Distribuição das etapas do checklist pelo status atual.", chDonut(st, String(tot), "etapas"), chLegenda(st)) +
+      chCard("gc2", "Etapas por área responsável", "Quantidade de etapas sob responsabilidade de cada área (8 maiores).", chHBarras(gcAreasQtd(items)), "") +
+      chCard("gc3", "Etapas concluídas no prazo", "Etapas concluídas ou atrasadas: quantas ficaram dentro do prazo previsto.", chDonut(prazo, cons ? gcPct(ok, cons) + "%" : "-", "no prazo"), chLegenda(prazo)) +
+      '</div><div class="ch-grid ch-g2">' +
+      chCard("gc4", "Atraso médio por área (dias por etapa)", "Média de dias de atraso por etapa, considerando todas as etapas de cada área.", atr.length ? chHBarras(atr, " d") : '<p style="color:#777">Nenhum atraso registrado.</p>', "") +
+      chCard("gc5", "Maiores gargalos por etapa (dias de atraso médio)", "Etapas com maior atraso médio entre as implantações já realizadas.", garRows.length ? chHBarras(garRows, " d") : '<p style="color:#777">Sem dados suficientes.</p>', "") +
+      '</div>';
+    gcHook(host);
+  }
+  function gcDash(){
+    var pn = document.getElementById("panel-dashboardExec"); if (!pn) return;
+    chCss();
+    var its = []; try { its = ITEMS.filter(function(it){ return it.cliente; }); } catch (e) {}
+    var host = document.getElementById("gcDash");
+    if (!host) { host = document.createElement("div"); host.id = "gcDash"; pn.appendChild(host); }
+    var st = gcStatusItens(its), ds = computeDelayStats(its), atr = gcAtrasoAreas(its);
+    var real = []; try { real = (coberturaHistoricoData || []).filter(function(f){ return !(f.__id && String(f.__id).indexOf("aval-") === 0) && f.PrecisaSubstituicao !== "Nao"; }); } catch (e) {}
+    var sm = gcContar(real, function(f){ return f.StatusSolicitacao || "Registrada"; });
+    var cs = Object.keys(sm).map(function(k){ return { nome: k, v: sm[k], cor: gcCorStatus(k), pct: gcPct(sm[k], real.length) }; });
+    var mes = []; var d0 = new Date(); d0.setDate(1); d0.setHours(0, 0, 0, 0);
+    for (var k = 5; k >= 0; k--) { var a = new Date(d0.getFullYear(), d0.getMonth() - k, 1), b = new Date(d0.getFullYear(), d0.getMonth() - k + 1, 1); mes.push({ nome: ("0" + (a.getMonth() + 1)).slice(-2) + "/" + String(a.getFullYear()).slice(2), v: real.filter(function(f){ var c = f.__created ? new Date(f.__created) : null; return c && c >= a && c < b; }).length }); }
+    host.innerHTML = '<p style="margin:18px 0 0;font-size:12px;color:#888;letter-spacing:.04em">GRÁFICOS</p><div class="ch-grid ch-g2">' +
+      chCard("gd1", "Implantações: etapas por status", "Todas as etapas das implantações ativas, por status.", chDonut(st, String(its.length), "etapas"), chLegenda(st)) +
+      chCard("gd2", "Implantações: atraso médio por área (dias)", "Média de dias de atraso por etapa em cada área.", atr.length ? chHBarras(atr, " d") : '<p style="color:#777">Nenhum atraso registrado.</p>', "") +
+      chCard("gd3", "Solicitações por status", "Solicitações de cobertura, substituição e requisição de pessoal.", chDonut(cs, String(real.length), "solicitações"), chLegenda(cs)) +
+      chCard("gd4", "Solicitações criadas por mês", "Quantidade de solicitações abertas em cada um dos últimos 6 meses.", chLinha(mes), '<span class="ch-li"><i style="background:' + CH.teal + '"></i>Solicitações (' + mes.reduce(function(s, p){ return s + p.v; }, 0) + ' no período)</span>') +
+      '</div>';
+    gcHook(host);
+  }
+  function gcWrap(nome, fn){
+    var o = window[nome]; if (typeof o !== "function" || o.__gc) return false;
+    var w = function(){ var r = o.apply(this, arguments); try { fn(); } catch (e) { console.warn("gc " + nome, e); } return r; };
+    w.__gc = 1; window[nome] = w; return true;
+  }
+  var gcT = setInterval(function(){
+    var a = gcWrap("buildChart", gcGeral), b = gcWrap("renderDashboardExecutivo", gcDash);
+    if (typeof window.buildChart === "function" && window.buildChart.__gc && typeof window.renderDashboardExecutivo === "function" && window.renderDashboardExecutivo.__gc) clearInterval(gcT);
+  }, 800);
+  setTimeout(function(){ try { gcGeral(); } catch (e) {} try { gcDash(); } catch (e) {} }, 2500);
+
 window.rsDebug = { carregar: carregar, api: api };
 })();
