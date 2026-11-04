@@ -20,7 +20,7 @@ async function api(method, params, body){
   var r = await fetch(url, opt);
   var j = await r.json().catch(function(){ return {}; });
   if (!r.ok) throw new Error(j.error || j.erro || ("HTTP " + r.status));
-  return j.data;
+  if (params && params.r === 'talentos') window.__rsTotal = (j && j.total != null) ? j.total : null; return j.data;
 }
 
 function addDU(d, n){ var x = new Date(d.getTime()); var c = 0; while (c < n){ x.setDate(x.getDate()+1); var w = x.getDay(); if (w !== 0 && w !== 6) c++; } return x; }
@@ -408,7 +408,7 @@ async function buscarBanco(){
   try { talentos = await api("GET", p); } catch(e){ box.innerHTML = '<span style="color:#b02a2a">' + esc(e.message) + '</span>'; return; }
   try { if (typeof loadTalentAvaliacoes === "function") await loadTalentAvaliacoes(true); } catch(e){}
   if (!talentos.length) { box.innerHTML = '<p style="color:#777">Nenhum candidato encontrado.</p>'; return; }
-  box.innerHTML = '<div style="font-size:12px;color:#777;margin-bottom:6px">' + talentos.length + ' resultado(s)' + (talentos.length >= 100 ? ' (mostrando os 100 mais recentes; refine a busca)' : '') + '</div><table class="rs-tbl"><thead><tr><th>Nome</th><th>Cargo / área</th><th>Cidade</th><th>Contato</th><th>Origem</th><th>Entrada</th><th>Avaliação</th><th></th></tr></thead><tbody>' +
+  box.innerHTML = '<div style="font-size:12px;color:#777;margin-bottom:6px">' + (window.__rsTotal != null ? (talentos.length + ' exibido(s) de ' + window.__rsTotal + ' candidato(s) no banco' + (window.__rsTotal > talentos.length ? ' (mostrando os mais recentes; refine a busca)' : '')) : (talentos.length + ' resultado(s)')) + '</div><table class="rs-tbl"><thead><tr><th>Nome</th><th>Cargo / área</th><th>Cidade</th><th>Contato</th><th>Origem</th><th>Entrada</th><th>Avaliação</th><th></th></tr></thead><tbody>' +
     talentos.map(function(c, i){ return '<tr><td><b>' + esc(c.nome) + '</b>' + (c.numero ? ' <span style="color:#777">#' + esc(c.numero) + '</span>' : '') + (c.etapa ? '<div style="font-size:11px;color:#777">' + esc(c.etapa) + '</div>' : '') + '</td><td>' + esc([c.cargo, c.area].filter(Boolean).join(" / ")) + '</td><td>' + esc(c.cidade || "") + '</td><td>' + esc([c.email, c.telefone].filter(Boolean).join(" · ")) + '</td><td>' + (c.fonte === "publico" ? '<span class="rs-pill rs-green">Página pública</span>' : '<span class="rs-pill rs-blue">RecrutaHub atual</span>') + '</td><td>' + fmtDT(c.criado_em) + '</td><td>' + avalCelula(c) + '</td><td style="white-space:nowrap">' + (c.fonte === "publico" ? '<button class="rs-btn" data-pf="' + i + '">Perfil</button> ' : '') + '<button class="rs-btn o" data-av="' + i + '">Avaliar</button> <button class="rs-btn" data-vc="' + i + '">Vincular</button></td></tr>'; }).join("") + '</tbody></table>';
   box.querySelectorAll("button[data-pf]").forEach(function(b){ b.addEventListener("click", function(){ perfil(talentos[Number(b.getAttribute("data-pf"))].id, buscarBanco); }); });
   box.querySelectorAll("button[data-av]").forEach(function(b){ b.addEventListener("click", function(){ avaliarCand(talentos[Number(b.getAttribute("data-av"))], buscarBanco); }); });
