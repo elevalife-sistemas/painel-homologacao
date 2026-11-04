@@ -558,7 +558,7 @@ function unificarBanco(){
 setInterval(unificarBanco, 1500);
 
 /* ===== Fase 4: avaliação (aprovar/reprovar) migrada para o Banco de Talentos unificado ===== */
-function avalDe(c){ try { return (typeof TALENT_AVALIACOES !== "undefined" && TALENT_AVALIACOES[String(c.id)]) || null; } catch(e){ return null; } }
+function avalDe(c){ try { return (typeof TALENT_AVALIACOES !== "undefined" && (TALENT_AVALIACOES[String(c.id)] || (c.origem_id ? TALENT_AVALIACOES[String(c.origem_id)] : null))) || null; } catch(e){ return null; } }
 function avalCelula(c){
   var a = avalDe(c); if (!a || !a.decisao || a.oculto) return '<span style="color:#999">-</span>';
   return '<span class="rs-pill ' + (a.decisao === "Aprovado" ? "rs-green" : "rs-red") + '">' + esc(a.decisao) + '</span>' + (a.coordenador ? '<div style="font-size:11px;color:#777">' + esc(a.coordenador) + '</div>' : '') + (a.decisao === "Reprovado" && a.motivoReprovacao ? '<div style="font-size:11px;color:#777">' + esc(a.motivoReprovacao) + '</div>' : '');
