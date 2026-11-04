@@ -374,10 +374,37 @@ function cartaOferta(v, c){
 async function perfil(id, aoFechar){
   var c;
   try { c = await api("GET", { r: "candidato", id: id }); } catch(e){ toast("Erro: " + e.message, true); return; }
-  var linhas = [["E-mail", c.email], ["Telefone", c.telefone], ["Cidade", [c.cidade, c.uf].filter(Boolean).join("/")], ["Cargo de interesse", c.cargo_interesse], ["Área de interesse", c.area_interesse], ["Pretensão salarial", c.pretensao ? Number(c.pretensao).toLocaleString("pt-BR", {style: "currency", currency: "BRL"}) : ""], ["LinkedIn", c.linkedin], ["Resumo", c.resumo], ["Origem", c.origem], ["Entrada", fmtDT(c.criado_em)], ["Consentimento", "ciência do aviso em " + fmtDT(c.consentimento_em) + " (" + (c.consentimento_versao || "sem versão") + ")" + (c.banco_talentos ? "; autorizou o banco de talentos" : "; NÃO autorizou o banco de talentos")]];
-  var h = '<h3>' + esc(c.nome) + '</h3><div class="rs-grid" style="grid-template-columns:repeat(2,1fr)">' + linhas.filter(function(l){ return l[1]; }).map(function(l){ return '<div><label style="font-size:12px;color:#777">' + l[0] + '</label><div>' + esc(l[1]) + '</div></div>'; }).join("") + '</div>' +
-    '<div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap">' + (c.tem_curriculo ? '<button class="rs-btn" id="rp_cv">Abrir currículo</button>' : '<span style="font-size:13px;color:#777;align-self:center">Sem currículo anexado.</span>') + '<button class="rs-btn" id="rp_del" style="color:#b02a2a">Excluir dados (LGPD)</button><button class="rs-btn" id="rp_x" style="margin-left:auto">Fechar</button></div>';
-  var ov = overlay(h);
+  var ini = String(c.nome || "?").trim().split(/\s+/).slice(0, 2).map(function(p){ return p.charAt(0).toUpperCase(); }).join("");
+  var txt = String(c.resumo || "");
+  var etapaM = txt.match(/Etapa RecrutaHub:\s*([^|]+?)\s*(\||$)/); var etapa = etapaM ? etapaM[1] : "";
+  var notaM = txt.match(/Pontua[^:]*:\s*([\d.,]+)/); var nota = notaM ? notaM[1] : "";
+  var partes = txt.split(/\s*---\s*Acompanhamento\s*---\s*/);
+  var obs = String(partes[0] || "").replace(/Etapa RecrutaHub:[^|]*\|?/, "").replace(/Pontua[^:]*:\s*[\d.,]+\s*\|?/, "").replace(/^[\s|]+|[\s|]+$/g, "");
+  var acomp = []; var ac = String(partes[1] || "");
+  if (ac) {
+    var labs = ["Data da entrevista", "Responsável entrevista", "Prioridade", "Fonte de Recrutamento", "Cidade", "Estado"];
+    var pos = labs.map(function(l){ return { l: l, i: ac.indexOf(l + ":") }; }).filter(function(x){ return x.i >= 0; }).sort(function(x, y){ return x.i - y.i; });
+    pos.forEach(function(x, k){ var ini2 = x.i + x.l.length + 1; var fim = k + 1 < pos.length ? pos[k + 1].i : ac.length; var val = ac.slice(ini2, fim).trim(); if (x.l === "Data da entrevista") { var dm = val.match(/^(\d{4})-(\d{2})-(\d{2})T?(\d{2})?:?(\d{2})?/); if (dm) val = dm[3] + "/" + dm[2] + "/" + dm[1] + (dm[4] ? " às " + dm[4] + ":" + dm[5] : ""); } if (val) acomp.push([x.l, val]); });
+  }
+  var av = null; try { av = avalDe(c); } catch(e){}
+  var emailOk = c.email && !/sem-email\.invalid$/.test(c.email) ? c.email : "";
+  var origemTxt = c.origem === "recrutahub" ? "RecrutaHub (migrado)" : (c.origem === "publico" || !c.origem ? "Página pública" : c.origem);
+  function item(l, v){ return v ? '<div class="rp-it"><span>' + l + '</span><b>' + esc(v) + '</b></div>' : ""; }
+  function card(tit, corpo){ return corpo ? '<div class="rp-card"><h4>' + tit + '</h4>' + corpo + '</div>' : ""; }
+  var pretensao = c.pretensao ? Number(c.pretensao).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) : "";
+  var css = '<style>.rp-hd{display:flex;align-items:center;gap:14px;background:linear-gradient(135deg,#6e1423,#4d0e19);color:#fff;border-radius:12px;padding:16px 18px;margin-bottom:14px}.rp-av{width:54px;height:54px;border-radius:50%;background:rgba(255,255,255,.18);display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:700;flex:none}.rp-hd h3{margin:0;font-size:19px;color:#fff}.rp-sub{font-size:13px;opacity:.85;margin-top:2px}.rp-tags{margin-left:auto;display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}.rp-tag{background:rgba(255,255,255,.16);border-radius:99px;padding:3px 10px;font-size:12px;font-weight:600}.rp-tag.ok{background:#e6f4ea;color:#1e7d38}.rp-tag.no{background:#fde8e8;color:#b02a2a}.rp-k{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:14px}.rp-kc{background:#fbeef0;border-radius:10px;padding:10px 12px}.rp-kc span{display:block;font-size:11px;color:#6b6f76;text-transform:uppercase;letter-spacing:.4px}.rp-kc b{display:block;font-size:17px;color:#6e1423;margin-top:2px}.rp-g{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.rp-card{background:#fff;border:1px solid #e5e6e9;border-radius:10px;padding:12px 14px}.rp-card.full{grid-column:1/-1}.rp-card h4{margin:0 0 8px;font-size:12px;text-transform:uppercase;letter-spacing:.5px;color:#6e1423}.rp-it{display:flex;justify-content:space-between;gap:12px;padding:5px 0;border-bottom:1px solid #f0f1f3;font-size:13px}.rp-it:last-child{border-bottom:0}.rp-it span{color:#6b6f76}.rp-it b{font-weight:600;text-align:right;word-break:break-word}.rp-p{font-size:13px;line-height:1.5;color:#1f2124;margin:0;white-space:pre-wrap}@media(max-width:640px){.rp-k,.rp-g{grid-template-columns:1fr}.rp-hd{flex-wrap:wrap}.rp-tags{margin-left:0}}</style>';
+  var tags = '<span class="rp-tag">' + esc(origemTxt) + '</span>' + (c.banco_talentos ? '<span class="rp-tag">Banco de talentos</span>' : '') + (av && av.decisao && !av.oculto ? '<span class="rp-tag ' + (av.decisao === "Aprovado" ? "ok" : "no") + '">' + esc(av.decisao) + (av.coordenador ? " — " + esc(av.coordenador) : "") + '</span>' : "");
+  var h = css + '<div class="rp-hd"><div class="rp-av">' + esc(ini) + '</div><div><h3>' + esc(c.nome) + '</h3><div class="rp-sub">' + esc([c.cargo_interesse, c.area_interesse].filter(Boolean).join(" · ")) + '</div></div><div class="rp-tags">' + tags + '</div></div>' +
+    '<div class="rp-k"><div class="rp-kc"><span>Pontuação</span><b>' + esc(nota || "-") + '</b></div><div class="rp-kc"><span>Etapa</span><b>' + esc(etapa || "-") + '</b></div><div class="rp-kc"><span>Entrada</span><b>' + esc(fmtDT(c.criado_em)) + '</b></div><div class="rp-kc"><span>Pretensão</span><b>' + esc(pretensao || "-") + '</b></div></div>' +
+    '<div class="rp-g">' +
+    card("Contato", item("E-mail", emailOk) + item("Telefone", c.telefone) + item("Cidade", [c.cidade, c.uf].filter(Boolean).join(" - ")) + item("LinkedIn", c.linkedin)) +
+    card("Interesse", item("Cargo", c.cargo_interesse) + item("Área", c.area_interesse) + item("Pretensão salarial", pretensao)) +
+    card("Acompanhamento", acomp.map(function(x){ return item(x[0], x[1]); }).join("")) +
+    card("Consentimento (LGPD)", '<p class="rp-p">Ciência do aviso em ' + esc(fmtDT(c.consentimento_em)) + (c.consentimento_versao ? " (" + esc(c.consentimento_versao) + ")" : "") + (c.banco_talentos ? ". Autorizou o banco de talentos." : ". Não autorizou o banco de talentos.") + '</p>') +
+    (obs ? '<div class="rp-card full"><h4>Observações</h4><p class="rp-p">' + esc(obs) + '</p></div>' : "") +
+    '</div>' +
+    '<div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">' + (c.tem_curriculo ? '<button class="rs-btn" id="rp_cv">Abrir currículo</button>' : '<span style="font-size:13px;color:#777">Sem currículo anexado.</span>') + '<button class="rs-btn" id="rp_del" style="color:#b02a2a">Excluir dados (LGPD)</button><button class="rs-btn" id="rp_x" style="margin-left:auto">Fechar</button></div>';
+    var ov = overlay(h);
   ov.querySelector("#rp_x").addEventListener("click", function(){ ov.remove(); });
   var cv = ov.querySelector("#rp_cv");
   if (cv) cv.addEventListener("click", async function(){ try { var r = await fetch(RS_URL + "?r=curriculo-url&id=" + encodeURIComponent(id), { headers: { "x-painel-secret": RECRUTAHUB_API_SECRET } }); var j = await r.json(); if (!r.ok) throw new Error(j.error || "erro"); window.open(j.url, "_blank", "noopener"); } catch(e){ toast("Erro: " + e.message, true); } });
@@ -558,7 +585,7 @@ function unificarBanco(){
 setInterval(unificarBanco, 1500);
 
 /* ===== Fase 4: avaliação (aprovar/reprovar) migrada para o Banco de Talentos unificado ===== */
-function avalDe(c){ try { return (typeof TALENT_AVALIACOES !== "undefined" && (TALENT_AVALIACOES[String(c.id)] || (c.origem_id ? TALENT_AVALIACOES[String(c.origem_id)] : null))) || null; } catch(e){ return null; } }
+function avalDe(c){ try { if (typeof TALENT_AVALIACOES === "undefined") return null; var ids = [c.id].concat(c.origem_ids || []); for (var i = 0; i < ids.length; i++) { var a = TALENT_AVALIACOES[String(ids[i])]; if (a) return a; } return null; } catch(e){ return null; } }
 function avalCelula(c){
   var a = avalDe(c); if (!a || !a.decisao || a.oculto) return '<span style="color:#999">-</span>';
   return '<span class="rs-pill ' + (a.decisao === "Aprovado" ? "rs-green" : "rs-red") + '">' + esc(a.decisao) + '</span>' + (a.coordenador ? '<div style="font-size:11px;color:#777">' + esc(a.coordenador) + '</div>' : '') + (a.decisao === "Reprovado" && a.motivoReprovacao ? '<div style="font-size:11px;color:#777">' + esc(a.motivoReprovacao) + '</div>' : '');
